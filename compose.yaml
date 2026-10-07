@@ -1,0 +1,69 @@
+name: ainovel
+services:
+  web:
+    build:
+      context: ./frontend
+    ports:
+      - "${APP_BIND:-0.0.0.0}:${APP_PORT:-18110}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 64m
+  api:
+    image: ainovel-api:latest
+    build: ./backend
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+  worker:
+    image: ainovel-api:latest
+    build: ./backend
+    command: ["python", "-m", "app.worker"]
+    env_file: .env
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 192m
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: ainovel
+      POSTGRES_USER: ainovel
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=30", "-c", "work_mem=2MB"]
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ainovel -d ainovel"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "32mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis:/data
+    restart: unless-stopped
+    mem_limit: 64m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+volumes:
+  postgres:
+  redis:
