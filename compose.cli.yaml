@@ -1,0 +1,14 @@
+# Optional genuine Claude Code transport. Configure LLM_TRANSPORT=claude_cli
+# and a reachable authorized gateway/proxy in private .env before enabling.
+services:
+  api:
+    image: ainovel-api-cli:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.cli
+  worker:
+    image: ainovel-api-cli:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.cli
+    mem_limit: 384m

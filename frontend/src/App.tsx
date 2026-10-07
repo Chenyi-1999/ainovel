@@ -159,6 +159,7 @@ function App() {
   const [settings, setSettings] = useState<any>({});
   const [usage, setUsage] = useState<any>(null);
   const [models, setModels] = useState<string[]>([]);
+  const [modelSource, setModelSource] = useState("provider");
   const [memoryDraft, setMemoryDraft] = useState({
     kind: "setting",
     content: "",
@@ -210,7 +211,10 @@ function App() {
       .then(setSettings)
       .catch((e) => setError(e.message));
     api<any>("/models")
-      .then((x) => setModels(x.models || []))
+      .then((x) => {
+        setModels(x.models || []);
+        setModelSource(x.source || "provider");
+      })
       .catch(() => {});
   }, [authenticated]);
   useEffect(() => {
@@ -855,7 +859,9 @@ function App() {
               <Menu size={20} />
             </button>
             <span className="breadcrumb">我的书架</span>
-            <span className="crumb-slash" aria-hidden="true">/</span>
+            <span className="crumb-slash" aria-hidden="true">
+              /
+            </span>
             <b>{novel?.title || "创作空间"}</b>
           </div>
           <div className="top-right">
@@ -976,9 +982,14 @@ function App() {
                 </datalist>
                 <div className="settings-grid">
                   <div>
-                    <label htmlFor="temperature">创作温度</label>
+                    <label htmlFor="temperature">
+                      {settings.transport === "claude_cli"
+                        ? "创作温度（客户端通道不适用）"
+                        : "创作温度"}
+                    </label>
                     <input
                       id="temperature"
+                      disabled={settings.transport === "claude_cli"}
                       type="number"
                       min="0"
                       max="2"
@@ -1026,7 +1037,13 @@ function App() {
                   </div>
                 </div>
                 <div className="save-settings">
-                  <span>模型名称可以根据服务商控制台填写。</span>
+                  <span>
+                    {settings.transport === "claude_cli"
+                      ? "当前通过真实 Claude Code 客户端调用。候选名称来自配置，实际可用模型以平台列表为准。"
+                      : modelSource === "catalog"
+                        ? "当前使用直接 API 调用。目录中的模型不代表已开通，请填写账号已开通的 Model ID 或 Endpoint ID。"
+                        : "当前使用直接 API 调用。模型名称可以根据服务商控制台填写。"}
+                  </span>
                   <button
                     className="button primary"
                     onClick={saveSettings}
@@ -1102,8 +1119,10 @@ function App() {
                   <div>
                     <div className="eyebrow">
                       {novel.genre || "我的作品"}{" "}
-                      <span className="eyebrow-dot" aria-hidden="true">·</span> {chapters.length}{" "}
-                      个章节
+                      <span className="eyebrow-dot" aria-hidden="true">
+                        ·
+                      </span>{" "}
+                      {chapters.length} 个章节
                     </div>
                     <h1>
                       {novel.title ||
@@ -1920,7 +1939,12 @@ function App() {
                       </div>
                       <div className="metric">
                         <span>估算费用</span>
-                        <b>{settings.input_price_per_million || settings.output_price_per_million ? Number(usage?.estimated_cost || 0).toFixed(2) : '未配置单价'}</b>
+                        <b>
+                          {settings.input_price_per_million ||
+                          settings.output_price_per_million
+                            ? Number(usage?.estimated_cost || 0).toFixed(2)
+                            : "未配置单价"}
+                        </b>
                       </div>
                     </div>
                     <div className="section-toolbar">

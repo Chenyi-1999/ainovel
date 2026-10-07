@@ -7,7 +7,7 @@
 需要 Docker Engine 与 Docker Compose。将模型令牌放入项目外的私密文件，用以下命令生成随机登录密码、密码哈希、数据库密码和运行配置：
 
 ```sh
-python scripts/setup_env.py --key-file /private/model-key --base-url https://agentrouter.org/v1 --model YOUR_MODEL
+python scripts/setup_env.py --key-file /private/model-key --base-url https://ark.cn-beijing.volces.com/api/v3 --model YOUR_ENABLED_MODEL_OR_ENDPOINT
 ```
 
 生成的登录信息位于被 Git 忽略的 `.secrets/login.txt`，运行配置为 `.env`。密钥只能配置在后端环境中，不要提交这些文件。也可参考 `.env.example` 手动配置。
@@ -35,6 +35,28 @@ docker compose ps
 上下文包限制 24,000 字符，完整模型请求限制 48,000 字符；这些是字符上限，不是精确 token 配额。手动导入过长章节须拆分后再做模型审稿或记忆提取。暂不包含 EPUB、多用户、GPU 本地模型、自动账单核对及硬性费用预算。
 
 如果模型供应商返回 `unauthorized_client_error`、验证网页、401 或 403，应由供应商确认普通 API 调用权限或更换兼容接口。应用不会伪装成其他客户端来绕过供应商限制。更换供应商后修改 `.env` 并重建 API 与 Worker 容器；网页只允许修改原接口域名内的地址，以保护服务器密钥。
+
+### AgentRouter 的真实客户端接入
+
+该网关的官方使用文档提供 Claude Code 接入方式。服务已增加可选的真实 Claude Code 通道，启用以下专用 Docker 配置时会安装官方客户端；普通 API 部署保持轻量。
+
+```dotenv
+LLM_TRANSPORT=claude_cli
+LLM_BASE_URL=https://agentrouter.org/v1
+LLM_MODEL=deepseek-v4-flash
+```
+
+```sh
+docker compose -f compose.yaml -f compose.cli.yaml up -d --build
+```
+
+该通道使用 Anthropic 协议，按平台支持列表选择 Claude、GLM 或 DeepSeek 模型。普通 OpenAI 通道仍保留为 `LLM_TRANSPORT=http`。客户端调用禁用工具、MCP、技能和 Hooks，每次使用独立临时目录，通过标准输入传入文本；密钥只在子进程环境中。输出 token 上限沿用写作任务，调用超时默认 180 秒，允许配置 `CLAUDE_CLI_TIMEOUT=1..240`。客户端通道不支持创作温度参数，模型候选列表来自配置，不能视为实时可用列表。
+
+还需确保服务器能访问主网关。若所在网络无法访问，可在私密 `.env` 中配置自己获准使用的稳定 `HTTPS_PROXY`，并设置 `NO_PROXY=localhost,127.0.0.1,db,redis`。不应依赖固定短 TTL 的网关 IP，也不应把依赖个人电脑在线的临时测试桥接当作长期云部署。
+
+### 火山方舟直接 API
+
+普通模型 API 使用 `LLM_BASE_URL=https://ark.cn-beijing.volces.com/api/v3`，`LLM_TRANSPORT=http`，并填入账号已开通的 Model ID 或 Endpoint ID。模型目录包含尚未开通的模型，列表成功不代表账号有推理权限。收到 `ModelNotOpen` 时，请在方舟控制台开通相应模型，或使用已开通的 ID。服务使用 `max_completion_tokens` 控制完整输出预算；豆包 Seed 模型默认关闭深度思考，避免为小说正文生成额外思考内容。
 
 ## 数据与维护
 

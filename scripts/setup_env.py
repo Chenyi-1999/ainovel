@@ -6,8 +6,9 @@ import secrets
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--key-file', required=True)
-parser.add_argument('--base-url', default='https://agentrouter.org/v1')
-parser.add_argument('--model', default='deepseek-v4-flash')
+parser.add_argument('--base-url', default='https://ark.cn-beijing.volces.com/api/v3')
+parser.add_argument('--model', required=True, help='Enabled Model ID or Endpoint ID for this account')
+parser.add_argument('--transport', choices=['http', 'claude_cli'], default='http')
 args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parent.parent
 target = root / '.env'
@@ -24,7 +25,8 @@ content = '\n'.join([
     f'DATABASE_URL=postgresql+psycopg://ainovel:{db_password}@db:5432/ainovel',
     'REDIS_URL=redis://redis:6379/0', f"ADMIN_PASSWORD_HASH='{password_hash}'",
     f'SESSION_SECRET={secrets.token_hex(32)}', 'COOKIE_SECURE=false',
-    f'LLM_BASE_URL={args.base_url}', f'LLM_API_KEY={key}', f'LLM_MODEL={args.model}', ''])
+    f'LLM_BASE_URL={args.base_url}', f'LLM_API_KEY={key}', f'LLM_MODEL={args.model}',
+    f'LLM_TRANSPORT={args.transport}', 'NO_PROXY=localhost,127.0.0.1,db,redis', ''])
 target.write_text(content, encoding='utf-8')
 private = root / '.secrets'
 private.mkdir(exist_ok=True)

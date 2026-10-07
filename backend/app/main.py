@@ -361,7 +361,9 @@ def patch_settings(body: SettingsPatch, db=Depends(database)):
 @app.get("/api/models", dependencies=auth)
 def models():
     try:
-        return {"models": gateway.discover_models()}
+        return {"models": gateway.discover_models(),
+                "source": "configured" if gateway.transport() == "claude_cli" else
+                          ("catalog" if gateway.settings()["base_url"].startswith("https://ark.cn-beijing.volces.com/") else "provider")}
     except ValueError as exc:
         raise HTTPException(502, str(exc))
 
