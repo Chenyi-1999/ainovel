@@ -42,3 +42,11 @@
 - 证据：artifacts/germany-smoke/ainovel-smoke-20261101T150755Z.json、对应TXT、restart-result.json及artifacts/migration-backend-tests.xml（Git忽略）。只读审查无阻断问题；补充第一章改写全文导出断言并对现有线上导出逐章核对。语法、--help及git diff --check通过。
 - 剩余边界：仍为IP/HTTP，未配置域名TLS；短篇测试不能证明百万字连续性或长期文笔质量；已测试gpt-4.1-mini，不宣称列表内全部模型可用。
 - Git：本条写入时尚未提交/推送；下一步将含本条和相关变更提交Gitee，并在188初始化对应Git开发工作树。业务部署与实际验收已完成，Git同步结果另记。
+
+## AINOVEL-20261101-MIGRATE188-02（关联 MIGRATE188-01）
+
+- 时间：2026-11-01T23:15:58.195034+08:00 Asia/Shanghai；代理：/root。
+- 目的与文件：补记Git交付及188开发工作树结果，更新DEPLOYMENT.md和CHANGELOG.md；业务代码及运行配置本轮未再改变。
+- 实际结果：迁移提交285eef17b4245678fd5663d652d0c6dfde2dbda7已成功推送Gitee main（3243b5a→285eef1）。188初始化main开发工作树，origin为用户指定Gitee仓库；逐项源码同步后git status为空，HEAD与迁移提交相同。数据库转储与Git传输包保存在188项目忽略的backups目录；本机传输暂存均位于D盘。没有复制本机SSH私钥。
+- 检查：Git bundle verify通过；188源码工作树干净；原API/网页镜像构建与真实工作流、重建持久化结果沿用01；未因纯文档收尾再次运行付费生成。152保持五容器停止，188五服务运行；未操作81。
+- Git与部署：业务迁移提交已推送并部署；本条及部署文档作为收尾提交随后同步，运行镜像无需因文档变更重建。域名TLS与长篇质量验证仍未实施。

@@ -2,6 +2,8 @@
 
 当前服务器：德国 `188.68.41.4`，项目目录 `/opt/ainovel`，网页地址 http://188.68.41.4:18110/ 。开发、构建和运行均以此服务器为目标。当前使用 IP 和 HTTP；配置域名与 HTTPS 后应设置 `COOKIE_SECURE=true`。
 
+188 上已建立 `main` 分支的 Git 开发工作树，远程仓库为 `git@gitee.com:star1999/ainovel.git`；未向服务器复制本机 SSH 私钥。代码更新仍需重建相应镜像后生效。
+
 模型配置为 `https://api.openai.com/v1`、`gpt-4.1-mini`、`LLM_TRANSPORT=http`，大纲、写作、审稿、记忆均使用该模型。服务器直接调用官方 API，运行不依赖本机或 152 的模型转发。密钥只保存在权限为 `600` 的服务器 `.env`，不提交仓库。网页登录密码沿用迁移前设置，本机私密登录文件 `.secrets/login.txt` 的地址已更新。
 
 原 `152.136.236.238:/opt/ainovel` 的五个项目容器已全部停止，源码和数据卷保留。不要同时恢复旧站写作任务。迁移前一致性备份位于本机 `D:\A_GPT\GPT-BackUp\GPT-AINovel\2026-11\`，含源码、PostgreSQL 快照和 Windows DPAPI 加密运行配置；不含依赖、Git 内部目录或缓存，不称完整备份。
