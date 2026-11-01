@@ -7,6 +7,7 @@ import secrets
 parser = argparse.ArgumentParser()
 parser.add_argument('--key-file', required=True)
 parser.add_argument('--base-url', default='https://ark.cn-beijing.volces.com/api/v3')
+parser.add_argument('--public-url', default='http://localhost:18110', help='Public URL saved with the local login details')
 parser.add_argument('--model', required=True, help='Enabled Model ID or Endpoint ID for this account')
 parser.add_argument('--transport', choices=['http', 'claude_cli'], default='http')
 args = parser.parse_args()
@@ -30,5 +31,5 @@ content = '\n'.join([
 target.write_text(content, encoding='utf-8')
 private = root / '.secrets'
 private.mkdir(exist_ok=True)
-(private / 'login.txt').write_text('纸间登录密码：' + password + '\n访问地址：http://152.136.236.238:18110\n',encoding='utf-8')
+(private / 'login.txt').write_text('纸间登录密码：' + password + '\n访问地址：' + args.public_url.rstrip('/') + '\n',encoding='utf-8')
 print('Runtime configuration created. Login information is in .secrets/login.txt')
