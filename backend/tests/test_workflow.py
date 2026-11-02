@@ -17,8 +17,8 @@ def model_success(novel_id, job_id, purpose, prompt, system, **kwargs):
     if purpose == "audit":
         return json.dumps({"report": "没有严重冲突", "content": ""}, ensure_ascii=False)
     if purpose == "confirm":
-        return json.dumps({"memories": [{"kind": "summary", "content": "药师记下叶脉，决定入城查访。"},
-                                       {"kind": "character", "content": "药师谨慎，不贸然试药。"}]}, ensure_ascii=False)
+        return json.dumps({"memories": [{"kind": "summary", "content": "药师记下叶脉，决定入城查访。", "evidence_quote": "决定入城查访", "visibility": "public"},
+                                       {"kind": "character", "content": "药师谨慎，不贸然试药。", "evidence_quote": "他没有贸然吞服", "visibility": "public"}]}, ensure_ascii=False)
     if purpose == "outline":
         return json.dumps({"title": "古药", "synopsis": "药师追查身世", "volumes": []}, ensure_ascii=False)
     return "修改后的选段"
@@ -34,6 +34,14 @@ def run():
     claimed = worker.claim_job()
     assert claimed
     worker.run_job(*claimed)
+
+
+def apply_candidates(client, task):
+    job = client.get(f"/api/jobs/{task['id']}").json()
+    result = job["result"]
+    response = client.post(f"/api/jobs/{task['id']}/apply-memory", json={"expected_revision": result["expected_revision"], "memories": result["memory_candidates"]})
+    assert response.status_code == 200, response.text
+    return response.json()
 
 
 def get_chapters(client, novel):
@@ -57,8 +65,10 @@ def test_draft_confirmation_and_edit_invalidate_canon(client, novel, monkeypatch
     assert len(chapters) == 2 and all(row["status"] == "draft" for row in chapters)
     assert client.get(f"/api/novels/{novel['id']}/memories").json() == []
     for row in chapters:
-        submit(client, novel, "confirm", chapter_id=row["id"])
+        task = submit(client, novel, "confirm", chapter_id=row["id"])
         run()
+        assert client.get(f"/api/jobs/{task['id']}").json()["result"]["applied"] is False
+        apply_candidates(client, task)
     assert len(client.get(f"/api/novels/{novel['id']}/memories").json()) == 4
     changed = client.patch(f"/api/chapters/{chapters[0]['id']}", json={"content": CONTENT + "他改变了计划。", "revision": 1})
     assert changed.status_code == 200 and changed.json()["revision"] == 2
@@ -67,7 +77,7 @@ def test_draft_confirmation_and_edit_invalidate_canon(client, novel, monkeypatch
     with Session() as db:
         assert retrieve_memory(db, novel["id"], "药师") == []
     assert client.get(f"/api/chapters/{chapters[0]['id']}/versions").json()[0]["content"] == CONTENT
-    submit(client, novel, "confirm", chapter_id=chapters[1]["id"])
+    task = submit(client, novel, "confirm", chapter_id=chapters[1]["id"])
     run()
     assert client.get(f"/api/novels/{novel['id']}/jobs").json()[0]["status"] == "failed"
 
@@ -161,8 +171,9 @@ def test_old_chapter_context_excludes_future_canon(client, novel, monkeypatch):
     submit(client, novel, "write", count=2)
     run()
     chapters = get_chapters(client, novel)
-    submit(client, novel, "confirm", chapter_id=chapters[1]["id"])
+    task = submit(client, novel, "confirm", chapter_id=chapters[1]["id"])
     run()
+    apply_candidates(client, task)
     with Session() as db:
         ctx = worker.context(db, db.get(worker.Novel, novel["id"]), "", before_number=2)
         assert ctx["canonical_memory"] == []

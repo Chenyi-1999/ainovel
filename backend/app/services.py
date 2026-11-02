@@ -47,7 +47,13 @@ def save_edit(db, chapter, title, content):
 
 def retrieve_memory(db, novel_id, query, limit=18, before_number=None):
     stmt = select(Memory).outerjoin(Chapter, Memory.source_chapter_id == Chapter.id).where(
-        Memory.novel_id == novel_id, Memory.stale.is_(False))
+        Memory.novel_id == novel_id, Memory.stale.is_(False), Memory.provenance != "legacy",
+        or_(Memory.visibility == "public",
+            (Memory.provenance == "manual") & Memory.source_chapter_id.is_(None) &
+            (Memory.kind == "setting") & (Memory.visibility == "unknown")),
+        or_(Memory.source_chapter_id.is_(None),
+            (Chapter.status == "confirmed") & Chapter.memory_dirty.is_(False) &
+            (Memory.source_revision == Chapter.revision) & (Memory.evidence_quote != "")))
     if before_number is not None:
         stmt = stmt.where(or_(Memory.source_chapter_id.is_(None), Chapter.number < before_number))
     # Score BEFORE limiting: an ancient relevant fact must remain accessible after
@@ -75,10 +81,11 @@ def retrieve_memory(db, novel_id, query, limit=18, before_number=None):
             seen.add(row.id)
         if len(selected) >= limit:
             break
-    return [{"kind": row.kind, "content": row.content[:1800],
+    return [{"kind": row.kind, "content": row.content,
              "source_chapter_id": row.source_chapter_id,
+             "source_revision": row.source_revision, "evidence_quote": row.evidence_quote,
              "source_number": db.get(Chapter, row.source_chapter_id).number if row.source_chapter_id else None}
-            for row in selected]
+            for row in selected if not row.source_chapter_id or row.evidence_quote in db.get(Chapter, row.source_chapter_id).content]
 
 
 def wake_worker():

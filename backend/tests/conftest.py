@@ -15,12 +15,13 @@ from fastapi.testclient import TestClient
 from app.auth import password_hash
 from app.db import Base, engine
 from app.main import app, login_attempts
+from app.migrations import migrate
 
 
 @pytest.fixture
 def client(monkeypatch):
     Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    migrate(engine)
     login_attempts.clear()
     monkeypatch.setenv("ADMIN_PASSWORD_HASH", password_hash("test-password", iterations=100000))
     monkeypatch.setattr("app.main.wake_worker", lambda: None)

@@ -11,7 +11,11 @@ from sqlalchemy.exc import IntegrityError
 
 from . import gateway
 from .auth import COOKIE, check_origin, issue_session, require_auth, verify_password
-from .db import Chapter, Job, Memory, Novel, Session, Setting, Usage, Version, initialize, serialize
+from .db import Chapter, Job, Memory, Novel, Session, Setting, Usage, Version, PromptTemplate, PromptRevision, StoryEntity, StoryRelation, Foreshadow, initialize, serialize
+from .dependencies import database
+from .prompts import router as prompt_router, selected_snapshot
+from .story import router as story_router, bump_context, fingerprint
+from .skills import SKILLS
 from .services import KINDS, assert_idle, get_or_404, save_edit, wake_worker
 
 
@@ -22,6 +26,8 @@ async def lifespan(app):
 
 
 app = FastAPI(title="小说生产工作台", lifespan=lifespan, docs_url=None, redoc_url=None)
+app.include_router(prompt_router)
+app.include_router(story_router)
 
 
 @app.middleware("http")
@@ -36,11 +42,6 @@ async def security_headers(request, call_next):
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
-
-
-def database():
-    with Session() as db:
-        yield db
 
 
 class Login(BaseModel):
@@ -126,8 +127,10 @@ def novel(novel_id: str, db=Depends(database)):
 def patch_novel(novel_id: str, body: NovelPatch, db=Depends(database)):
     row = get_or_404(db, Novel, novel_id)
     assert_idle(db, novel_id)
+    db.refresh(row, with_for_update=True)
     for key, value in body.model_dump(exclude_none=True).items():
         setattr(row, key, value)
+    bump_context(db, novel_id)
     db.commit()
     return serialize(row)
 
@@ -139,7 +142,9 @@ def delete_novel(novel_id: str, db=Depends(database)):
     # Explicit child deletion works identically under PostgreSQL and SQLite tests.
     ids = select(Chapter.id).where(Chapter.novel_id == novel_id)
     db.execute(delete(Version).where(Version.chapter_id.in_(ids)))
-    for model in (Memory, Usage, Job, Chapter):
+    prompt_ids = select(PromptTemplate.id).where(PromptTemplate.novel_id == novel_id)
+    db.execute(delete(PromptRevision).where(PromptRevision.prompt_id.in_(prompt_ids)))
+    for model in (StoryRelation, Foreshadow, StoryEntity, PromptTemplate, Memory, Usage, Job, Chapter):
         db.execute(delete(model).where(model.novel_id == novel_id))
     db.delete(row)
     db.commit()
@@ -164,6 +169,7 @@ def create_chapter(novel_id: str, body: ChapterInput, db=Depends(database)):
     number = (db.scalar(select(func.max(Chapter.number)).where(Chapter.novel_id == novel_id)) or 0) + 1
     row = Chapter(novel_id=novel_id, number=number, title=body.title, content=body.content)
     db.add(row)
+    bump_context(db, novel_id)
     db.commit()
     return serialize(row)
 
@@ -185,6 +191,7 @@ def patch_chapter(chapter_id: str, body: ChapterPatch, db=Depends(database)):
         raise HTTPException(409, "章节已被更新，请刷新后编辑")
     save_edit(db, row, body.title if body.title is not None else row.title,
               body.content if body.content is not None else row.content)
+    bump_context(db, row.novel_id)
     db.commit()
     return serialize(row)
 
@@ -202,13 +209,34 @@ class JobInput(BaseModel):
     target_words: int = Field(default=2000, ge=300, le=6000)
     chapter_id: str | None = None
     selection: str | None = Field(default=None, max_length=20000)
+    skill_id: str | None = None
+    prompt_template_id: str | None = None
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=160)
+
+
+@app.get("/api/skills", dependencies=auth)
+def skills():
+    return SKILLS
 
 
 @app.post("/api/novels/{novel_id}/jobs", dependencies=auth)
 def create_job(novel_id: str, body: JobInput, db=Depends(database)):
-    get_or_404(db, Novel, novel_id)
+    book = get_or_404(db, Novel, novel_id)
+    db.refresh(book, with_for_update=True)
+    request_fingerprint = fingerprint(body.model_dump(exclude={"idempotency_key"}))
+    if body.idempotency_key:
+        existing = db.scalar(select(Job).where(Job.novel_id == novel_id, Job.idempotency_key == body.idempotency_key))
+        if existing:
+            if existing.request_fingerprint != request_fingerprint:
+                raise HTTPException(409, "幂等键已用于不同任务参数")
+            return serialize(existing)
+    if body.skill_id is not None and body.skill_id != body.kind:
+        raise HTTPException(422, "Skill与任务类型不匹配")
     assert_idle(db, novel_id)
     payload = body.model_dump()
+    template = selected_snapshot(db, body.prompt_template_id, book, body.kind, body.instructions)
+    if template:
+        payload["prompt_snapshot"] = template
     if body.kind in ("confirm", "rewrite", "audit"):
         if not body.chapter_id:
             raise HTTPException(422, "请选择章节")
@@ -220,12 +248,20 @@ def create_job(novel_id: str, body: JobInput, db=Depends(database)):
         if body.selection and body.selection not in chapter.content:
             raise HTTPException(422, "选段已发生变化，请重新选择")
         payload["expected_revision"] = chapter.revision
-    row = Job(novel_id=novel_id, kind=body.kind, count=body.count if body.kind == "write" else 1, payload=payload)
+        if body.kind == "confirm":
+            payload["content_hash"] = fingerprint(chapter.content)
+            payload["context_revision"] = book.context_revision
+    row = Job(novel_id=novel_id, kind=body.kind, count=body.count if body.kind == "write" else 1, payload=payload,
+              idempotency_key=body.idempotency_key, request_fingerprint=request_fingerprint)
     db.add(row)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
+        if body.idempotency_key:
+            existing = db.scalar(select(Job).where(Job.novel_id == novel_id, Job.idempotency_key == body.idempotency_key))
+            if existing and existing.request_fingerprint == request_fingerprint:
+                return serialize(existing)
         raise HTTPException(409, "本书已有任务正在执行")
     wake_worker()
     return serialize(row)
@@ -261,6 +297,9 @@ def retry_job(job_id: str, db=Depends(database)):
     if row.status not in ("failed", "cancelled"):
         raise HTTPException(409, "只有失败或停止的任务可以重试")
     assert_idle(db, row.novel_id)
+    db.refresh(row, with_for_update=True)
+    if row.status not in ("failed", "cancelled"):
+        raise HTTPException(409, "任务状态已变化，请刷新后重试")
     if row.payload.get("chapter_id"):
         chapter = get_or_404(db, Chapter, row.payload["chapter_id"])
         if chapter.revision != row.payload.get("expected_revision"):
@@ -273,56 +312,6 @@ def retry_job(job_id: str, db=Depends(database)):
         raise HTTPException(409, "本书已有任务正在执行")
     wake_worker()
     return serialize(row)
-
-
-@app.get("/api/novels/{novel_id}/memories", dependencies=auth)
-def memories(novel_id: str, db=Depends(database)):
-    get_or_404(db, Novel, novel_id)
-    return [serialize(row) for row in db.scalars(select(Memory).where(Memory.novel_id == novel_id).order_by(Memory.created_at.desc()))]
-
-
-class MemoryInput(BaseModel):
-    kind: Literal["summary", "character", "setting", "timeline", "foreshadow"]
-    content: str = Field(min_length=1, max_length=12000)
-    source_chapter_id: str | None = None
-
-
-@app.post("/api/novels/{novel_id}/memories", dependencies=auth)
-def create_memory(novel_id: str, body: MemoryInput, db=Depends(database)):
-    get_or_404(db, Novel, novel_id)
-    assert_idle(db, novel_id)
-    if body.source_chapter_id:
-        chapter = get_or_404(db, Chapter, body.source_chapter_id)
-        if chapter.novel_id != novel_id or chapter.status != "confirmed" or chapter.memory_dirty:
-            raise HTTPException(422, "来源章节须为本书有效定稿")
-    row = Memory(novel_id=novel_id, **body.model_dump())
-    db.add(row)
-    db.commit()
-    return serialize(row)
-
-
-class MemoryPatch(BaseModel):
-    kind: Literal["summary", "character", "setting", "timeline", "foreshadow"] | None = None
-    content: str | None = Field(default=None, min_length=1, max_length=12000)
-
-
-@app.patch("/api/memories/{memory_id}", dependencies=auth)
-def patch_memory(memory_id: str, body: MemoryPatch, db=Depends(database)):
-    row = get_or_404(db, Memory, memory_id)
-    assert_idle(db, row.novel_id)
-    for key, value in body.model_dump(exclude_none=True).items():
-        setattr(row, key, value)
-    db.commit()
-    return serialize(row)
-
-
-@app.delete("/api/memories/{memory_id}", dependencies=auth)
-def delete_memory(memory_id: str, db=Depends(database)):
-    row = get_or_404(db, Memory, memory_id)
-    assert_idle(db, row.novel_id)
-    db.delete(row)
-    db.commit()
-    return {"deleted": True}
 
 
 class SettingsPatch(BaseModel):

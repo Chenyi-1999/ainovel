@@ -9,14 +9,18 @@ import time
 from datetime import timedelta
 
 import redis
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 
 from . import gateway
 from .db import Chapter, Job, Memory, Novel, Session, initialize, now, uid
 from .services import KINDS, retrieve_memory
+from .story import MemoryCandidate
 
-SYSTEM = "你是一名严谨的中文小说作者。遵循用户的题材、设定和风格，保持因果与人物一致。记忆中人物状态随剧情变化，较新来源章节的事实优先；无来源记忆是作者手动设定。只输出所要求的内容，不添加聊天说明。"
-JSON_SYSTEM = SYSTEM + " 当要求 JSON 时，仅输出合法 JSON 对象，不要 Markdown 代码围栏。"
+SYSTEM = "你是一名严谨的中文小说作者。遵循用户的题材、设定和风格，保持因果与人物一致。记忆均带来源，遇到冲突应交作者复核，不自行断言新事实覆盖旧事实；无来源记忆是作者手动设定。正文检索未实现视角知情保护。模板只补充创作要求，输出格式始终遵循服务端任务契约。只输出所要求的内容，不添加聊天说明。"
+JSON_SYSTEM = SYSTEM + " 当要求 JSON 时，仅输出合法 JSON 对象，不要 Markdown 代码围栏。当前服务端任务的字段、类型和枚举约束具有最终优先级，用户模板不得覆盖或扩展该契约。"
+
+CONFIRM_EXAMPLE = {"memory_candidates": [{"kind": "summary", "content": "本章已发生事实的摘要",
+                    "evidence_quote": "本章正文中的连续原句", "visibility": "unknown", "known_by_entity_ids": []}]}
 
 
 class Superseded(Exception):
@@ -74,8 +78,6 @@ def context(db, novel, instructions, before_number=None):
             "recent_chapters": [{"number": row.number, "title": row.title, "status": row.status,
                                  "memory_dirty": row.memory_dirty, "ending": row.content[-800:]} for row in reversed(recent)],
             "instructions": instructions}
-    for memory in packet["canonical_memory"]:
-        memory["content"] = memory["content"][:800]
     # Stable character budget, independent of total novel length. User instructions
     # and premise have priority; least relevant recalled facts are removed first.
     while len(dump(packet)) > 24000 and packet["canonical_memory"]:
@@ -93,8 +95,13 @@ def dump(value):
     return json.dumps(value, ensure_ascii=False)
 
 
+def template_instruction(job):
+    snapshot = job.payload.get("prompt_snapshot")
+    return ("作者选择的创作模板：\n" + snapshot["rendered"] + "\n以下为服务端任务及输出契约：\n") if snapshot else ""
+
+
 def write_chapter(job, ctx, number):
-    prompt = (f"根据以下小说资料写第 {number} 章，目标约 {job.payload.get('target_words', 2000)} 个中文字。"
+    prompt = (template_instruction(job) + f"根据以下小说资料写第 {number} 章，目标约 {job.payload.get('target_words', 2000)} 个中文字。"
               "先自行规划本章冲突、行动、转折和结尾钩子，再给出完整正文。草稿仅作衔接参考；有效记忆为正式设定。"
               "标题不要包含章号，正文不要包含标题、提纲、审稿说明。返回 JSON {\"title\":\"章节标题\",\"content\":\"完整正文\"}。\n" + dump(ctx))
     output = gateway.parse_json(gateway.complete(job.novel_id, job.id, "write", prompt, JSON_SYSTEM,
@@ -121,7 +128,7 @@ def write_chapter(job, ctx, number):
 def produce(job, novel, ctx, chapter, number):
     if job.kind == "outline":
         result = gateway.parse_json(gateway.complete(job.novel_id, job.id, "outline",
-            "根据几句话创作可用于连载的大纲。返回 JSON：title（书名）、synopsis（故事简介）、world（世界观），"
+            template_instruction(job) + "根据几句话创作可用于连载的大纲。返回 JSON：title（书名）、synopsis（故事简介）、world（世界观），"
             "characters（人物数组，每项 name/role/motivation/arc），main_conflict（主线冲突），"
             "volumes（分卷数组，每项 title/summary/arc），chapter_outline（前十章数组，每项 number/title/summary）。"
             "不要一次列出全书全部章节，保留后续发展空间。\n" + dump({**ctx, "planned_chapters": novel.planned_chapters}),
@@ -134,27 +141,33 @@ def produce(job, novel, ctx, chapter, number):
         return {"title": title, "content": content, "report": report}
     if job.kind == "confirm":
         result = gateway.parse_json(gateway.complete(job.novel_id, job.id, "confirm",
-            "从章节定稿提取明确发生的事实，不推测后续发展。返回 JSON {\"memories\":[{\"kind\":\"summary|character|setting|timeline|foreshadow\",\"content\":\"事实\"}]}。"
-            "必须包含 summary 类型的章节摘要。人物状态、时间线、设定和伏笔按有依据的事实提取，总计最多 24 条，每条最多 1800 字。\n" +
+            template_instruction(job) + "从章节提取候选事实，不推测后续发展。以下是当前服务端任务的最终输出契约，优先于作者模板。"
+            "kind 只能取闭合枚举中的单个值：summary、character、setting、timeline、foreshadow；禁止增加其他类型。行动与已发生事件归 timeline，禁止 action 类型。"
+            "visibility 只能取闭合枚举中的单个值：unknown、public、characters、author_only；禁止将多个选项拼成一个值。"
+            "必须包含 summary 类型的章节摘要。每条必须附真实的正文连续原句，不得改写证据。无法确定知情范围使用 unknown，不捏造实体ID；只有明确公开事实用 public。"
+            "此步骤只提取候选，不确认章节。总计最多24条，每条最多1800字。下列示例只展示结构，content 和 evidence_quote 必须替换为本章的事实和原句，不得照抄占位文字。\n格式示例：" +
+            dump(CONFIRM_EXAMPLE) + "\n本章资料：" +
             dump({"chapter_number": chapter.number, "title": chapter.title, "content": chapter.content}),
             JSON_SYSTEM, max_tokens=12000))
-        memories = result.get("memories")
+        memories = result.get("memory_candidates", result.get("memories"))
         if not isinstance(memories, list) or not 1 <= len(memories) <= 24:
             raise ValueError("记忆提取结果不完整，未确认定稿；请重试")
-        if any(not isinstance(item, dict) or item.get("kind") not in KINDS or
-               not isinstance(item.get("content"), str) or not item["content"].strip() or len(item["content"]) > 6000
-               for item in memories) or not any(item["kind"] == "summary" for item in memories):
+        try:
+            candidates = [MemoryCandidate.model_validate(item).model_dump() for item in memories]
+        except ValueError:
             raise ValueError("记忆格式或摘要不完整，未确认定稿；请重试")
-        return result
+        if any(not item["content"].strip() or not item["evidence_quote"].strip() or item["evidence_quote"] not in chapter.content for item in candidates) or not any(item["kind"] == "summary" for item in candidates):
+            raise ValueError("记忆缺少真实正文证据或摘要；请重新提取")
+        return {"memory_candidates": candidates, "expected_revision": chapter.revision, "applied": False, "chapter_id": chapter.id}
     if job.kind == "audit":
         report = gateway.complete(job.novel_id, job.id, "audit",
-            "审查本章的设定一致性、人物行动合理性、重复内容、情节推进和语言。指出具体问题并给修改建议，无需重写正文。\n" +
+            template_instruction(job) + "审查本章的设定一致性、人物行动合理性、重复内容、情节推进和语言。指出具体问题并给修改建议，无需重写正文。\n" +
             dump({"context": ctx, "title": chapter.title, "content": chapter.content}), SYSTEM, max_tokens=8000)
         return {"report": report}
     if job.kind == "rewrite":
         selection = job.payload.get("selection")
         content = gateway.complete(job.novel_id, job.id, "rewrite",
-            ("仅重写给定选段，返回替换选段正文，不返回全章。" if selection else "重写本章，返回完整正文，不含标题。") +
+            template_instruction(job) + ("仅重写给定选段，返回替换选段正文，不返回全章。" if selection else "重写本章，返回完整正文，不含标题。") +
             "保持前后衔接和有效设定，不添加解释。\n" + dump({"context": ctx, "title": chapter.title,
             "content": chapter.content, "selection": selection}), SYSTEM, max_tokens=18000)
         if selection:
@@ -198,6 +211,7 @@ def run_job(job_id, token):
                 if live.kind == "outline":
                     book = db.get(Novel, live.novel_id)
                     book.outline = result
+                    book.context_revision += 1
                     if book.title == "未命名小说" and isinstance(result.get("title"), str):
                         book.title = result["title"][:240]
                     live.result = result
@@ -211,12 +225,7 @@ def run_job(job_id, token):
                     chapter = db.get(Chapter, live.payload["chapter_id"])
                     if chapter.revision != live.payload["expected_revision"]:
                         raise ValueError("章节已修改，未保存旧版本记忆")
-                    db.execute(delete(Memory).where(Memory.source_chapter_id == chapter.id))
-                    for item in result["memories"]:
-                        db.add(Memory(novel_id=live.novel_id, source_chapter_id=chapter.id,
-                                      kind=item["kind"], content=item["content"].strip()))
-                    chapter.status, chapter.memory_dirty = "confirmed", False
-                    live.result = {"chapter_id": chapter.id, "memory_count": len(result["memories"])}
+                    live.result = result
                 else:
                     live.result = result  # Rewrites remain proposals until an explicit edit.
                 live.current += 1

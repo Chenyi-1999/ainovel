@@ -27,7 +27,7 @@ def main():
     access = {'gateway_user': 'viewer', 'gateway_password': password, 'mumu_user': 'admin',
               'mumu_password': password, 'lite_user': 'lab-admin', 'lite_password': password,
               'urls': {name: f'http://188.68.41.4:{port}' for name, port in
-                       [('mumu', 18020), ('lite', 18021), ('story', 18022), ('cli', 18023)]}}
+                       [('mumu', 18020), ('lite', 18021), ('story', 18022)]}}
     content = {'runtime.env': ''.join(key + '=' + value + '\n' for key, value in runtime.items()),
                'auth.json': json.dumps(auth, indent=2), 'access.json': json.dumps(access, indent=2)}
     for name, value in content.items():

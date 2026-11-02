@@ -92,6 +92,17 @@ def job(client: httpx.Client, novel_id: str, kind: str, *, timeout: float,
         time.sleep(min(2.0, remaining))
 
 
+def apply_memory_candidates(client: httpx.Client, extracted: dict[str, Any]) -> dict[str, Any]:
+    """Explicitly approve this smoke run's evidence-backed extraction proposals."""
+    result = extracted.get("result") or {}
+    candidates = result.get("memory_candidates")
+    require(isinstance(candidates, list) and bool(candidates), "Extraction returned no memory candidates")
+    require(result.get("applied") is False, "Extraction unexpectedly applied memory without review")
+    return json_response(safe_request(client, "POST", f"/api/jobs/{extracted['id']}/apply-memory", json={
+        "expected_revision": result["expected_revision"], "memories": candidates,
+    }), "Approve memory candidates")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", required=True, help="Deployment origin, for example http://127.0.0.1:18110")
@@ -171,8 +182,11 @@ def main() -> int:
 
             confirm_job = job(client, novel_id, "confirm", timeout=args.job_timeout,
                               chapter_id=first["id"])
+            require(not get_json(client, f"/api/novels/{novel_id}/memories"),
+                    "Extraction alone must not create formal memories")
+            apply_memory_candidates(client, confirm_job)
             memories = get_json(client, f"/api/novels/{novel_id}/memories")
-            first_memories = [item for item in memories if item.get("source_chapter_id") == first["id"]]
+            first_memories = [item for item in memories if item.get("source_chapter_id") == first["id"] and not item.get("stale")]
             require(confirm_job.get("status") == "succeeded" and first_memories,
                     "Chapter confirmation produced no saved memories")
             record("confirm_first_chapter", memory_count=len(first_memories))
@@ -205,6 +219,7 @@ def main() -> int:
             # Edits dirty canon; re-confirm before asking for the next chapter.
             second_confirm = job(client, novel_id, "confirm", timeout=args.job_timeout,
                                  chapter_id=first["id"])
+            apply_memory_candidates(client, second_confirm)
             require(second_confirm.get("status") == "succeeded", "Edited chapter could not be confirmed")
             confirmed_chapters = get_json(client, f"/api/novels/{novel_id}/chapters")
             confirmed_first = next((item for item in confirmed_chapters if item.get("id") == first["id"]), None)
@@ -212,7 +227,7 @@ def main() -> int:
                     confirmed_first.get("status") == "confirmed",
                     "Reconfirming the edited chapter did not restore confirmed canon state")
             memories = get_json(client, f"/api/novels/{novel_id}/memories")
-            first_memories = [item for item in memories if item.get("source_chapter_id") == first["id"]]
+            first_memories = [item for item in memories if item.get("source_chapter_id") == first["id"] and not item.get("stale")]
             require(first_memories and all(item.get("stale") is False for item in first_memories),
                     "Reconfirmed chapter has no active, non-stale memories")
             record("reconfirm_after_edit", memory_count=len(first_memories))

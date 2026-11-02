@@ -31,6 +31,14 @@ import {
   WandSparkles,
 } from "lucide-react";
 
+import { matchingPrompts } from "./components/Studio/studioPolicy";
+import PromptLibrary from "./components/Studio/PromptLibrary";
+import SkillLibrary from "./components/Studio/SkillLibrary";
+import MemoryStudio from "./components/Studio/MemoryStudio";
+import ForeshadowStudio from "./components/Studio/ForeshadowStudio";
+import RelationStudio from "./components/Studio/RelationStudio";
+import { canLeaveStudio, Memory as StudioMemory, Prompt } from "./components/Studio/shared";
+
 type Novel = {
   id: string;
   title?: string;
@@ -65,17 +73,15 @@ type Job = {
   result?: any;
   created_at?: string;
 };
-type Memory = {
-  id: string;
-  kind: string;
-  content: string;
-  source_chapter_id?: string;
-  stale?: boolean;
-};
+type Memory = StudioMemory;
 type Page =
   | "manuscript"
   | "outline"
   | "memory"
+  | "prompts"
+  | "skills"
+  | "foreshadows"
+  | "relations"
   | "tasks"
   | "settings"
   | "usage";
@@ -93,7 +99,8 @@ const api = async <T,>(path: string, init: RequestInit = {}): Promise<T> => {
     let detail = `${res.status} ${res.statusText}`;
     try {
       const j = await res.json();
-      detail = j.detail || j.error || detail;
+      const value = j.detail || j.error;
+      detail = `${res.status} ${typeof value === "string" ? value : value ? JSON.stringify(value) : res.statusText}`;
     } catch {}
     throw new Error(detail);
   }
@@ -107,7 +114,7 @@ const labelKind = (kind: string) =>
     write: "续写章节",
     rewrite: "选段改写",
     audit: "审稿检查",
-    confirm: "确认定稿",
+    confirm: "提取记忆候选",
   })[kind] || kind;
 const statusLabel = (status: string) =>
   ({
@@ -128,7 +135,12 @@ function App() {
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [memories, setMemories] = useState<Memory[]>([]);
-  const [page, setPage] = useState<Page>("manuscript");
+  const [page, setPageState] = useState<Page>("manuscript");
+  const setPage = (next: Page) => { if (next === page || canLeaveStudio()) setPageState(next); };
+  const [prompts, setPrompts] = useState<Prompt[]>([]);
+  const [promptChoice, setPromptChoice] = useState<Record<string, string>>({});
+  const refreshPrompts = useCallback(async () => { setPrompts(await api<Prompt[]>("/prompts")); }, []);
+  const promptSelector = (kind: string) => <label className="studio-prompt-picker">提示词模板<select aria-label={`${labelKind(kind)}提示词模板`} value={promptChoice[kind] || ""} onChange={e => setPromptChoice(x => ({ ...x, [kind]: e.target.value }))}><option value="">使用默认提示词</option>{matchingPrompts(prompts, kind, novel?.id).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>;
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -160,15 +172,12 @@ function App() {
   const [usage, setUsage] = useState<any>(null);
   const [models, setModels] = useState<string[]>([]);
   const [modelSource, setModelSource] = useState("provider");
-  const [memoryDraft, setMemoryDraft] = useState({
-    kind: "setting",
-    content: "",
-  });
   const [versions, setVersions] = useState<any[]>([]);
   const [showVersions, setShowVersions] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const saveTimer = useRef<number | undefined>(undefined);
   const jobStates = useRef<Record<string, string>>({});
+  const jobSubmitting = useRef(false);
   const dirtyRef = useRef(false);
   const chapterIdRef = useRef<string | undefined>(undefined);
   const novelIdRef = useRef<string | undefined>(undefined);
@@ -197,6 +206,16 @@ function App() {
       : cs[0];
     setChapter(fresh || null);
   }, []);
+  const refreshStoryData = async (id: string) => {
+    const [m, j, c] = await Promise.all([
+      api<Memory[]>(`/novels/${id}/memories`),
+      api<Job[]>(`/novels/${id}/jobs`),
+      api<Chapter[]>(`/novels/${id}/chapters`),
+    ]);
+    if (novelIdRef.current !== id) return;
+    setMemories(m); setJobs(j); setChapters(c);
+    if (!dirtyRef.current) setChapter(c.find(x => x.id === chapterIdRef.current) || c[0] || null);
+  };
   useEffect(() => {
     api("/me")
       .then(async () => {
@@ -207,6 +226,7 @@ function App() {
   }, [refreshNovels]);
   useEffect(() => {
     if (!authenticated) return;
+    refreshPrompts().catch((e) => setError(e.message));
     api<any>("/settings")
       .then(setSettings)
       .catch((e) => setError(e.message));
@@ -345,6 +365,7 @@ function App() {
     }
   };
   const logout = async () => {
+    if (!canLeaveStudio()) return;
     try {
       await api("/logout", { method: "POST" });
     } catch {}
@@ -353,9 +374,10 @@ function App() {
     setNovels([]);
   };
   const openNovel = async (n: Novel) => {
+    if (!canLeaveStudio()) return;
     if (busy) return;
     if (n.id === novel?.id) {
-      setPage("manuscript");
+      setPageState("manuscript");
       setMobileOpen(false);
       return;
     }
@@ -370,11 +392,12 @@ function App() {
     setChapters([]);
     setNovel(n);
     setChapter(null);
-    setPage("manuscript");
+    setPageState("manuscript");
     setMobileOpen(false);
   };
   const createNovel = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canLeaveStudio()) return;
     if (!newPremise.trim()) return;
     setBusy(true);
     setError("");
@@ -391,7 +414,7 @@ function App() {
       setNovel(n);
       setChapter(null);
       setShowNew(false);
-      setPage("outline");
+      setPageState("outline");
       setOutlinePrompt("");
       setNotice("小说已建立，接下来可以生成大纲。");
     } catch (e: any) {
@@ -431,11 +454,12 @@ function App() {
     }
   };
   const createJob = async (kind: string, extra: any = {}) => {
-    if (!novel) return;
+    if (!novel || jobSubmitting.current) return;
     if (activeJobs.length) {
       setError("当前已有生成任务，请等待完成或先停止任务。");
       return;
     }
+    jobSubmitting.current = true;
     setBusy(true);
     setError("");
     try {
@@ -453,14 +477,15 @@ function App() {
       }
       const job = await api<Job>(`/novels/${novel.id}/jobs`, {
         method: "POST",
-        body: JSON.stringify({ kind, ...extra }),
+        body: JSON.stringify({ kind, ...(matchingPrompts(prompts, kind, novel.id).some(p => p.id === promptChoice[kind]) ? { prompt_template_id: promptChoice[kind] } : {}), ...extra, idempotency_key: `${Date.now()}-${Math.random().toString(36).slice(2)}` }),
       });
       setJobs((x) => [job, ...x]);
       setPage("tasks");
-      setNotice(`${labelKind(kind)}任务已加入队列。`);
+      setNotice(`${labelKind(kind)}任务已加入队列。${kind === "confirm" ? "完成后请到故事记忆审核候选，采纳后才会定稿。" : ""}`);
     } catch (e: any) {
       setError(e.message);
     } finally {
+      jobSubmitting.current = false;
       setBusy(false);
     }
   };
@@ -527,11 +552,23 @@ function App() {
     setChapter(c);
     setPage("manuscript");
   };
-  const copyText = async () => {
+  const chapterCopyText = () => {
     const heading = chapter
       ? `第${chapter.number}章${editorTitle ? ` ${editorTitle}` : ""}`
       : editorTitle;
-    const text = `${copyTitle && heading ? heading + "\n\n" : ""}${editorText}`;
+    return `${copyTitle && heading ? heading + "\n\n" : ""}${editorText}`;
+  };
+  const showManualCopy = (text = chapterCopyText()) => {
+    setCopyFallback(text);
+    setNotice("已打开手动复制框，请按 Ctrl+C（Mac 为 ⌘C）复制已选中的全文。");
+    window.requestAnimationFrame(() => {
+      const field = document.getElementById("copy-fallback-text");
+      field?.scrollIntoView({ block: "center", behavior: "smooth" });
+      field?.focus({ preventScroll: true });
+    });
+  };
+  const copyText = async () => {
+    const text = chapterCopyText();
     try {
       await navigator.clipboard.writeText(text);
       setCopyFallback("");
@@ -554,7 +591,7 @@ function App() {
         setCopyFallback("");
         setNotice("正文已复制，可以粘贴到发布平台。");
       } else {
-        setCopyFallback(text);
+        showManualCopy(text);
         setNotice("浏览器未允许自动复制，请从下方框中手动复制。");
       }
     }
@@ -819,8 +856,18 @@ function App() {
         <nav className="nav-list">
           {navItem("manuscript", "正文编辑", SquarePen)}
           {navItem("outline", "故事大纲", LayoutDashboard)}
-          {navItem("memory", "故事记忆", UsersRound)}
           {navItem("tasks", "生成任务", ListChecks, activeJobs.length)}
+        </nav>
+        <div className="side-heading"><span>创作资产</span></div>
+        <nav className="nav-list">
+          {navItem("prompts", "提示词库", FileText)}
+          {navItem("skills", "Skill 工作流", WandSparkles)}
+        </nav>
+        <div className="side-heading"><span>故事资料</span></div>
+        <nav className="nav-list">
+          {navItem("memory", "故事记忆", BookMarked)}
+          {navItem("foreshadows", "伏笔台账", ListChecks)}
+          {navItem("relations", "关系图谱", UsersRound)}
         </nav>
         <div className="side-bottom">
           <div className="usage-mini">
@@ -875,7 +922,7 @@ function App() {
               aria-label="帮助"
               onClick={() =>
                 setNotice(
-                  "先创建小说，再生成大纲与章节。修改正文后点击保存；确认定稿会更新故事记忆。复制和导出可用于发布。",
+                  "先创建小说，再生成大纲与章节。修改正文后点击保存；提取记忆候选后，须在故事记忆审核采纳才会定稿。复制和导出可用于发布。",
                 )
               }
             >
@@ -889,6 +936,7 @@ function App() {
             {copyFallback && (
               <div className="copy-fallback">
                 <label htmlFor="copy-fallback-text">手动复制正文</label>
+                <p>点选下方文本框后，按 Ctrl+C（Mac 为 ⌘C）复制全文。</p>
                 <textarea
                   id="copy-fallback-text"
                   readOnly
@@ -1055,7 +1103,11 @@ function App() {
                 </div>
               </section>
             )}
-            {page === "settings" ? null : !novel ? (
+            {page === "settings" ? null : page === "prompts" ? (
+              <PromptLibrary api={api} novelId={novel?.id} onChanged={() => refreshPrompts().catch(e => setError(e.message))} />
+            ) : page === "skills" ? (
+              <SkillLibrary api={api} novelId={novel?.id} chapters={chapters} chapterId={chapter?.id} prompts={prompts} busy={busy || activeJobs.length > 0} onRun={createJob} />
+            ) : !novel ? (
               <section className="welcome-panel">
                 <div className="welcome-copy">
                   <span className="eyebrow">写作，从一句话开始</span>
@@ -1182,7 +1234,8 @@ function App() {
                       <Download size={16} />
                       导出
                     </button>
-                    <button
+                    {(page === "manuscript" || page === "outline") && promptSelector(page === "outline" ? "outline" : "write")}
+                    {(page === "manuscript" || page === "outline") && <button
                       className="button primary"
                       onClick={() =>
                         page === "outline"
@@ -1199,11 +1252,12 @@ function App() {
                     >
                       <WandSparkles size={16} />
                       {page === "outline" ? "生成大纲" : "写下一章"}
-                    </button>
+                    </button>}
                   </div>
                 </div>
+                {(page === "manuscript" || page === "outline") && <p className="model-call-note">生成、大纲、改写、审稿与记忆提取会调用已配置模型并计入用量。记忆候选须审核采纳后才会定稿；续写每章最多 2 次调用。</p>}
                 <div className="tabs">
-                  {(["manuscript", "outline", "memory", "tasks"] as Page[]).map(
+                  {(["manuscript", "outline", "memory", "foreshadows", "relations", "tasks"] as Page[]).map(
                     (p) => (
                       <button
                         key={p}
@@ -1216,7 +1270,7 @@ function App() {
                             ? "故事大纲"
                             : p === "memory"
                               ? "故事记忆"
-                              : `生成任务${activeJobs.length ? ` · ${activeJobs.length}` : ""}`}
+                              : p === "foreshadows" ? "伏笔台账" : p === "relations" ? "关系图谱" : `生成任务${activeJobs.length ? ` · ${activeJobs.length}` : ""}`}
                       </button>
                     ),
                   )}
@@ -1321,6 +1375,13 @@ function App() {
                             复制正文
                           </button>
                           <button
+                            className="button outline small"
+                            disabled={!chapter || !editorText}
+                            onClick={() => showManualCopy()}
+                          >
+                            手动复制
+                          </button>
+                          <button
                             className="button primary small"
                             disabled={!dirty || busy}
                             onClick={saveChapter}
@@ -1394,16 +1455,15 @@ function App() {
                                   })
                                 }
                                 disabled={
-                                  (chapter.status === "confirmed" &&
-                                    !chapter.memory_dirty) ||
+                                  !editorText.trim() ||
                                   busy ||
                                   editingLocked
                                 }
                               >
                                 <Check size={15} />
-                                {chapter.memory_dirty
-                                  ? "更新故事记忆"
-                                  : "确认定稿"}
+                                {chapter.memory_dirty || chapter.status === "confirmed"
+                                  ? "重新提取记忆候选"
+                                  : "提取记忆候选"}
                               </button>
                               <button
                                 className="text-button"
@@ -1479,6 +1539,7 @@ function App() {
                             <div className="rewrite-selected">
                               {selection || "还没有选中内容，将改写整章。"}
                             </div>
+                            {promptSelector("rewrite")}
                             <div className="rewrite-controls">
                               <input
                                 aria-label="改写要求"
@@ -1698,128 +1759,9 @@ function App() {
                     </p>
                   </section>
                 )}
-                {page === "memory" && (
-                  <section className="section-card">
-                    <div className="section-intro">
-                      <div className="section-icon">
-                        <UsersRound size={20} />
-                      </div>
-                      <div>
-                        <h2>故事记忆</h2>
-                        <p>
-                          人物、设定、时间线和伏笔会在章节之间延续。重要信息可以手动补充或修正。
-                        </p>
-                      </div>
-                    </div>
-                    <form
-                      className="memory-add"
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        if (editingLocked) return;
-                        try {
-                          const m = await api<Memory>(
-                            `/novels/${novel.id}/memories`,
-                            {
-                              method: "POST",
-                              body: JSON.stringify(memoryDraft),
-                            },
-                          );
-                          setMemories((x) => [m, ...x]);
-                          setMemoryDraft((v) => ({ ...v, content: "" }));
-                          setNotice("故事记忆已添加。");
-                        } catch (e: any) {
-                          setError(e.message);
-                        }
-                      }}
-                    >
-                      <label>新增记忆</label>
-                      <div className="memory-form-row">
-                        <select
-                          aria-label="记忆类型"
-                          disabled={editingLocked}
-                          value={memoryDraft.kind}
-                          onChange={(e) =>
-                            setMemoryDraft((v) => ({
-                              ...v,
-                              kind: e.target.value,
-                            }))
-                          }
-                        >
-                          <option value="setting">设定</option>
-                          <option value="character">人物</option>
-                          <option value="timeline">时间线</option>
-                          <option value="foreshadow">伏笔</option>
-                        </select>
-                        <input
-                          aria-label="记忆内容"
-                          disabled={editingLocked}
-                          value={memoryDraft.content}
-                          onChange={(e) =>
-                            setMemoryDraft((v) => ({
-                              ...v,
-                              content: e.target.value,
-                            }))
-                          }
-                          placeholder="例如：林照从不在雨天使用火系法术"
-                        />
-                        <button
-                          className="button primary small"
-                          disabled={editingLocked}
-                        >
-                          <Plus size={15} />
-                          添加
-                        </button>
-                      </div>
-                    </form>
-                    <div className="memory-list">
-                      {memories.length ? (
-                        memories.map((m) => (
-                          <article className="memory-card" key={m.id}>
-                            <div className="memory-badge">
-                              {{
-                                setting: "设定",
-                                character: "人物",
-                                timeline: "时间线",
-                                foreshadow: "伏笔",
-                                summary: "摘要",
-                              }[m.kind] || m.kind}
-                            </div>
-                            <p>{m.content}</p>
-                            {m.stale && (
-                              <small className="job-error">
-                                来源章节已修改，这条记忆已失效，请重新确认章节。
-                              </small>
-                            )}
-                            <button
-                              aria-label="删除记忆"
-                              className="icon-button danger-icon"
-                              disabled={editingLocked}
-                              onClick={async () => {
-                                if (confirm("删除这条故事记忆？")) {
-                                  await api(`/memories/${m.id}`, {
-                                    method: "DELETE",
-                                  });
-                                  setMemories((xs) =>
-                                    xs.filter((x) => x.id !== m.id),
-                                  );
-                                }
-                              }}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </article>
-                        ))
-                      ) : (
-                        <div className="empty-state">
-                          <BookOpen size={22} />
-                          <span>
-                            目前还没有故事记忆。确认章节后，人物与情节记忆会逐步建立。
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </section>
-                )}
+                {page === "memory" && <MemoryStudio key={novel.id} api={api} novelId={novel.id} memories={memories} jobs={jobs} chapters={chapters} locked={editingLocked} onRefresh={() => refreshStoryData(novel.id)} />}
+                {page === "foreshadows" && <ForeshadowStudio key={novel.id} api={api} novelId={novel.id} memories={memories} locked={editingLocked} />}
+                {page === "relations" && <RelationStudio key={novel.id} api={api} novelId={novel.id} memories={memories} locked={editingLocked} />}
                 {page === "tasks" && (
                   <section className="section-card">
                     <div className="section-intro">
@@ -1865,11 +1807,13 @@ function App() {
                               {j.error && (
                                 <p className="job-error">{j.error}</p>
                               )}
+                              {j.kind === "confirm" && j.status === "succeeded" && <p className="job-report">{j.result?.applied ? "记忆已由作者审核采纳。" : "候选已提取，尚未定稿。请到故事记忆审核并采纳。"}</p>}
                               {j.result?.report && (
                                 <p className="job-report">{j.result.report}</p>
                               )}
                             </div>
                             <div className="job-actions">
+                              {j.kind === "confirm" && j.status === "succeeded" && <button className="button soft small" onClick={() => setPage("memory")}>{j.result?.applied ? "查看已采纳记忆" : "审核记忆候选"}</button>}
                               {j.status === "succeeded" &&
                                 (j.kind === "rewrite" ||
                                   j.kind === "outline") && (

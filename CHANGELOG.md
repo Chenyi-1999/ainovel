@@ -82,3 +82,26 @@
 - Git：部署提交 ef61150dde1cbf5482c32b8934809313e053ebec 已成功推送 Gitee main（a0330fb→ef61150）；31文件，不包含第三方源码、私有凭据或验收数据。提交前Python语法、两组静态各5项、初始化--help、暂存差异检查与实际私有值扫描通过；本条随后作为文档提交同步。
 - 部署：188已同步29份公开部署文件并通过合并Compose config及nginx -t；私有配置保留。沿用DEPLOY-01的实际重建、11项HTTP、网络隔离及浏览器验收，不因文档再运行生成或重建。CLI终端连接已关闭，保留入口页供用户进入；四个最终演示标签保留。
 - 剩余边界不变：无模型配置，MuMu向量功能禁用；原18110保留、152仅SSH中转、未操作81。
+
+## AINOVEL-INTEGRATE-20261102-01
+
+- 时间：2026-11-02T18:03:28+08:00 Asia/Shanghai；代理/root；架构 /root/novel_arch_astra（architect/Astra），只读来源调查 /root/prompt_evidence、/root/story_memory_evidence，归档配置 /root/retire_cli_config。
+- 目的：按用户指定由Astra设计并直接开发部署三参考项目的提示词/Skill/伏笔/记忆/关系图；另按新增要求去除四个体验项目容器。
+- 文件与行为：deploy/reference-lab/compose.yaml、gateway/nginx.conf、init_private.py、README.md；本机忽略源码索引补记退役。CLI服务加archived-cli profile，默认不启用，移除18023端口/代理，新环境登录文件不再生成CLI入口。其他三个服务配置保留仅供手动复现。主应用功能实现尚在准备。
+- 备份：D:\A_GPT\GPT-BackUp\GPT-AINovel\2026-11\GPT-AINovel__2026-11-02_180009__源码快照__功能整合设计与停用CLI前.zip，SHA256 72a88ec1b3d856ecce434fb5ccec1ed0161c35678b2370fd4eb3c5c390d1694a；提交18cf4b69a503152cf961e0ba772b3a6e1df2aba3源码快照，CRC/成员SHA通过，无数据库/私有配置/参考检出，未应用恢复，非完整备份；D盘索引及管理记录已追加。
+- 实际部署：188:/opt/ainovel-reference-lab执行compose down，全部8个专用容器及7个网络已移除；保留卷、镜像、源码、构建缓存。随后按Compose标签查询容器无输出，主项目18110健康HTTP200。未调用模型，未动主应用/无关项目，152仅作SSH中转，未访问81。
+- 检查与状态：归档配置diff --check、CLI端口/监听/Profile静态断言和初始化脚本AST通过，未运行初始化或覆盖私有配置；架构与主应用开发/部署未完成，Git本轮尚未提交/推送。
+
+## AINOVEL-INTEGRATE-20261102-02（关联 INTEGRATE-01）
+
+- 时间：2026-11-02T18:36:43+08:00 Asia/Shanghai；代理/root；整体设计与只读复核 /root/novel_arch_astra（architect / gpt-6-astra）；后端 /root/integrate_backend，前端 /root/integrate_frontend。用户已明确授权Astra设计后直接开发部署。
+- 目的与文件：整合分类提示词、独立Skill和故事知识；backend/app新prompts/skills/story/dependencies/migrations模块及db/main/services/worker；backend/tests；frontend/App/styles、新Studio组件与策略测试；scripts/verify_postgres.py、verify_live_workflow.py；README、DEPLOYMENT、docs/ARCHITECTURE、CHANGELOG；试用退役配置见01。第三方源码保持忽略且未修改，独立实现行为和原创默认模板。
+- 行为：7个内置原创模板、任务分类/题材标签/小说范围、预览/导入预检/导出/历史恢复；五种Skill映射真实Job，模板版本快照及DB幂等键；提取候选不再自动定稿，人工审核原句并事务采纳。五张新表、Memory来源revision/引文/知情/非递归history、Novel上下文版本、关系及事件冻结memory_revision、追加式伏笔时间线和按章截止关系图。旧记忆标legacy不伪造证据，失效历史保留。原编辑/改写提案/导出仍保留，并新增始终可达的手动复制。
+- 架构审查与修复：修复普通关系编辑错误恢复过期证据、错误apply非confirm任务的锁序风险、事实原位修改缺历史证据、删除等待锁后旧history覆盖；补针对测试。上下文事实整条纳入/舍弃，继续24k/48k字符预算，不伪称token预算或完整人物POV能力。
+- 实际检查：主代理最终backend全量45通过/1跳过/1既有anyio弃用警告，frontend策略5通过；本机和188构建通过。188独立ainovel_verify PostgreSQL使用mock模型验证采纳/来源/图/伏笔、实际并发revision与幂等唯一约束、原流程及导出通过。没有用SQLite结果代替PG锁语义。
+- 真实验收与失败记录：演示小说手写正文，真实提取前两次失败且无正式记忆写入；受控诊断定位kind=action不合法，改合法JSON示例/闭合枚举/行动归timeline提示，不放宽校验、不丢非法候选、不无限重试。复验提取成功，浏览器核对证据后采纳；总3调用/1708输入/1268输出token。未改变供应商/密钥/模型配置，未向退役试用项目添加API。
+- 浏览器：独立栏目、模板版本与预览、Skill说明、候选采纳、有效记忆、伏笔进展、SVG关系图均查看；390宽截图无页面横向溢出。自动复制显示成功但会话剪贴板读取为空，未确认OS剪贴板；手动复制全文与selection全选已确认。TXT与存储内容核对，未因验证改写原用户作品。
+- 备份与部署：API/Worker停止后备份D:\A_GPT\GPT-BackUp\GPT-AINovel\2026-11\GPT-AINovel__2026-11-02_182213__数据备份__提示词记忆升级前数据库.zip，SHA256 fd36b0d0f352f4ad5c82bbf1418c723b57cb25707e7c52e6503f13ef08d21a9c；pg_restore目录/ZIP CRC/成员SHA通过，原dump与镜像回退标签保留，应用恢复未验证、非完整备份。188显式离线迁移schema1，原4小说/6章/31记忆原字段校验一致，.env哈希不变。API/Worker/Web更新并实际再次force-recreate，提示词、记忆、伏笔、实体关系、任务结果与正文均与checkpoint相同；18110恢复健康。数据库/Redis未重建。152仅SSH中转，未操作81；体验8容器/7网络已移除、卷/源码/镜像保留。
+- 证据：忽略的artifacts/studio-smoke/verify-result.json、persistence-checkpoint.json、handwritten-demo.txt、prompts-desktop.jpg、memory-review.jpg、skills-mobile.jpg、relations-desktop.jpg、manual-copy.jpg。源码和数据库D盘备份索引、管理记录已追加。私有值不入日志或Git。
+- 边界：图谱/伏笔是人工维护及证据引用，非自动全文关系抽取；自动上下文使用Memory和既有小说资料，不额外注入全部图谱/计划；无向量模型、通用任意Skill执行器、完整POV推理或百万字质量保证。自动剪贴板在内置浏览器未独立核实，手动入口可用。
+- Git：本条写入时本轮尚未提交/推送；运行镜像已部署，接下来提交并同步188开发源码工作树；最终Git同步另记。build暂存位于D盘和188独立构建目录，未在C盘生成大源码副本。
