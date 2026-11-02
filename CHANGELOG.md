@@ -222,3 +222,10 @@
 - 188只读核对：/opt/ainovel HEAD=ee3eaba且干净，5主容器Running/noOOM，API/DB/Redis healthy，Web/Worker无独立healthcheck，公开18110健康200。仅文档变更，无需重建容器或重复此前134后端/13前端/真实5099字测试；本轮不运行新应用测试或模型调用，不改数据/凭据。
 - 边界：未创建Codespace、GitHub Release或新版本tag；本次发布是现有源码main。未访问81；ssh-G核对itemkeep-server仍为152.136.236.238/root，152仅作188管理中转，不操作该服务器项目。D盘新专用publish-transfer目录用于后续Git bundle传输，不称新备份。
 - Git/部署状态：本条写入时尚未提交/推送；下一步提交并推送main到Gitee及GitHub，之后记录实际发布结果并将最终文档快进同步188，不重建已在线应用。未打印/写入Token、密码或私钥。
+
+
+## AINOVEL-PUBLISH-20261102T223527-02（关联 PUBLISH-01）
+
+- 时间：2026-11-02T22:37:32.883673+08:00 Asia/Shanghai；代理/root；文件CHANGELOG.md，仅记录实际发布结果，无业务/运行配置变更。
+- 已完成Git发布：提交56b85917f34cd2ba39ea1ea524d41eda1315ae26成功推送Gitee origin/main（ee3eaba→56b8591），并首次推送GitHub Chenyi-1999/ainovel main（新分支）。两端ls-remote main回读均等于该完整hash；GitHub仓库API确认PUBLIC、isEmpty=false、默认main。本地主分支上游仍origin/main、工作树干净。完整历史与公开脚手架发布，私有目录/原文包/凭据不包含。
+- 验证：仅文档新增，差异检查通过，无新增应用测试、模型调用、数据库操作、容器重建或Codespace/Release/tag创建。188先前核对健康200及五容器正常，业务版本不变。本条将以文档提交同步两仓库，并使用D盘bundle快进188已确认干净的源码工作树，结束后核对HEAD/clean及health；不重复重建运行服务。未操作81或152项目，未暴露凭据。
