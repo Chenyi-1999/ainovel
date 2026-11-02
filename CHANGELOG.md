@@ -127,3 +127,10 @@
 - 备份：源码基线D:\A_GPT\GPT-BackUp\GPT-AINovel\2026-11\GPT-AINovel__2026-11-02_191248__源码快照__原提示词目录导入前基线.zip，SHA256 6c6e0f36a5d8b9a72ef76e49d669dab7434b90f1e0fafd350eb2121d79dee784，为本轮开始时提交dda1db6源码、不含本轮新代码/原文包/数据；数据库D:\A_GPT\GPT-BackUp\GPT-AINovel\2026-11\GPT-AINovel__2026-11-02_191807__数据备份__原提示词目录导入前数据库.zip，SHA256 4b4062fa40bc54e1e0188d8b46997622a717297cc139774d114d3af71d345e5b，API/Worker停止后pg_dump，pg_restore目录/ZIP CRC/成员SHA通过；均未应用恢复、非完整备份，D盘索引及管理记录已追加。旧小说/章节/记忆原字段hash一致，.env hash未变，镜像回退标签与dump保留。
 - 部署与边界：188:/opt/ainovel已迁移/导入并运行；来源内容包不进Git或镜像，仅认证实例私有数据，MuMu许可/归属保留、Lite未附许可证状态不隐瞒。16适配是当前任务规则适配，并不运行完整原系统条件/注入引擎；27参考不伪称已接入工具。152仅SSH中转（本轮ssh -G复核为152.136.236.238/root），试用18020–18023保持关闭，未访问81或改无关项目。
 - Git：本条写入时尚未提交/推送本轮；下一步提交导入器/索引文档/测试与UI，不包含原文内容包，并同步188开发工作树。构建与传输暂存均D盘/188独立构建目录。
+
+## AINOVEL-REFERENCE-PROMPTS-20261102-02（关联 REFERENCE-PROMPTS-01）
+
+- 时间：2026-11-02T19:35:41+08:00 Asia/Shanghai；代理/root；文件CHANGELOG.md，仅补记最终Git交付和运行检查，无业务改动。
+- Git：功能提交a74b7f9cd0d5a82481b5761cd497b1f2fec1d585已成功推送Gitee main（dda1db6→a74b7f9），Git bundle验证通过，188开发工作树快进至同提交且干净；原文包/上游代码/凭据/备份未入Git。提交前实际私有值和完整来源原文/长块排除扫描、Python语法、差异检查通过。本条随后作为文档提交同步。
+- 部署与验收：18110公开健康200，5主项目容器Running且无OOM，API/DB/Redis healthy；Web/Worker由实际UI/数据库检查补足，无伪称独立health。43来源条目重建后SHA及原文/66块、全部预览、旧8模板/版本、5Skill均核对通过；原文参考任务422。私有.env未变，自己的Buildx构建器已停止，试用服务与网络0、18020–18023仍关闭，7试用卷保留。
+- 证据：artifacts/reference-prompts/verify-result.json、postgres-import.json、catalog-checkpoint.json、runtime-audit.json、catalog-desktop.jpg、catalog-mobile.jpg。未追加付费生成或变更登录，152仅SSH中转，未操作81。
