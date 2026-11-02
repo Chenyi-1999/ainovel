@@ -173,3 +173,52 @@
 - Git：功能提交13f920386a430efd08f189855377081da6473b5b已推送Gitee main（5e642f3→13f9203）；19份公开文件。暂存范围/私有登录实际值/密钥形态排除及差异检查通过；无私有来源包、凭据、验收正文或归档。D盘bundle校验通过，188开发工作树快进到同提交且干净，.env哈希仍一致。本条随后以文档提交同步。
 - 最终运行：188主项目5容器Running且无OOM，API/DB/Redis health均healthy，Web/Worker以实际UI及7调用任务验证，无伪称独立healthcheck；公开18110健康200。试用容器/网络0、18020–18023仍关闭，7卷保留，自己的Buildx已停止。未动152服务及81/无关项目。
 - 最终浏览器：最后布局修正后重新加载，章节及5099字仍存在，桌面完整信息+换行操作栏通过，390宽scrollWidth375≤390，无横向溢出。复制全文一致/全选及调用提示沿用03实测；保留结果页可查看4800→5099。手机/桌面截图与runtime-audit.json已保存。本条未追加生成、数据库变更或新备份；业务/样本边界沿用03。
+
+## AINOVEL-GITHUB-LINK-20261102-8fa5a084
+
+- 时间：2026-11-02T21:58:23+08:00 Asia/Shanghai；代理 /root；本地只读检查 /root/repository_readiness。
+- 目的：接收用户提供的 GitHub SSH 仓库地址，核对管理权限并关联当前项目；尚未收到明确的首次发布范围。
+- 影响文件：本机 .git/config 新增 github 远程 git@github.com:Chenyi-1999/ainovel.git；CHANGELOG.md 追加本条。原 origin 仍为 Gitee，main 上游未改变；无业务代码变更。
+- 实际检查：GitHub 连接账号 Chenyi-1999；目标 Chenyi-1999/ainovel 为 public、size=0、默认 main，返回 admin/maintain/push/pull 权限。操作前工作树干净，main 为 ee3eaba，共 12 条提交。已检查适用本地指令路径、最新日志、Git 忽略规则及跟踪文件名/大小；.env、.secrets、私有评估目录与来源检出均被忽略，未发现已跟踪的这些私有路径；未执行完整历史内容秘密扫描，不据此保证历史无敏感内容。
+- SSH 检查：目标解析为 github.com，未配置 ProxyJump/ProxyCommand；22 端口在认证前关闭，git ls-remote 退出 128。备用 ssh.github.com:443 可到达但 StrictHostKeyChecking 因无已知 ED25519 主机键而拒绝，未关闭主机校验、未新增密钥或修改 SSH 配置。GitHub CLI 未安装，本机 Git 使用 manager 凭据助手；未读取/输出凭据。
+- 验证与剩余事项：远程地址读取一致；文档差异检查在本条追加后执行。未运行应用测试（仅 Git 关联及记录）。GitHub 连接的管理权限已确认，本机 SSH 推送通道尚未验证成功；首次公开上传范围仍待用户指定。
+- Git/部署：未提交、未推送；本条留在工作区。未部署、未访问任何项目服务器（包括 81、152、188），未变更远端源码、数据或仓库设置。
+
+## AINOVEL-GITHUB-CLI-SETUP-20261102-eeeb2fc2
+
+- 时间：2026-11-02T22:05:46+08:00 Asia/Shanghai；代理 /root；Codespaces 本地只读评估 /root/codespaces_readiness。
+- 目的：按用户要求代办本机 GitHub CLI、HTTPS 认证及 Codespaces 访问准备，需要用户输入时提示。
+- 影响范围：启动 winget 安装 GitHub.cli 2.103.3；CHANGELOG.md 追加本条。沿用上一条的 github 远程，当前尚未切换 HTTPS；没有业务代码或运行配置变更。
+- 实际检查与进度：本机 gh 未安装、winget 1.29.380 可用；官方 GitHub CLI MSI 已下载且 winget 安装包哈希验证通过。安装进程仍运行，检测到 Windows consent 窗口“GitHub CLI 正在请求你的许可”，已请用户点击系统授权；此时未确认安装完成，未开始 OAuth 登录。
+- Codespaces 评估：仅阅读公开配置及 .env.example；项目无 .devcontainer，现有 Compose 包含 web/api/worker/PostgreSQL/Redis，公开入口18110，完整运行需要独立的数据库/会话/登录配置及模型API配置。没有读取 .env/.secrets，没有启动环境或调用模型。
+- 验证/剩余：等待 Windows 安装授权，然后核对CLI版本、GitHub账号/仓库权限、HTTPS连接和Codespaces可访问性；完整云端运行配置及创建尚未执行。应用测试未运行（本轮为工具与认证准备）。
+- Git/部署：未提交、未推送，原有CHANGELOG修改保留；未创建/启动Codespace、未发布、未部署、未访问81/152/188等任何项目服务器。未写入或输出密码、Token、SSH私钥或登录授权码。
+
+## AINOVEL-GITHUB-CLI-AUTH-20261102-3303217f
+
+- 时间：2026-11-02T22:12:50+08:00 Asia/Shanghai；代理 /root；关联 GITHUB-CLI-SETUP-20261102-eeeb2fc2。
+- 目的：用户已确认 Windows 安装许可，继续完成本机 GitHub HTTPS 与 Codespaces 授权准备。
+- 影响范围：GitHub CLI 2.103.3 已安装至 C:\Program Files\GitHub CLI\gh.exe，winget 成功退出；本机 .git/config 的 github 远程改为 https://github.com/Chenyi-1999/ainovel.git，原 Gitee origin 及 main 上游保留；CHANGELOG.md 追加本条。
+- 实际检查：CLI --version 返回 2.103.3；登录前 auth status 确认无已登录账号。已启动 GitHub 官方浏览器设备授权，选择 HTTPS 及 Git 凭据集成，额外申请 codespace 权限；已打开官方授权页并提示用户本人登录 Chenyi-1999。一次性设备码未写入本记录或项目文件。
+- 当前状态：等待用户完成 GitHub 授权，尚未确认 OAuth 成功、凭据存储方式、HTTPS 推送权限或 Codespaces API 访问。地址回读通过，应用测试未运行（无应用变更）；后续将进行认证/API/Git 只读或 dry-run 验证。
+- Git/部署：未提交、未推送、未发布；未创建/启动 Codespace、未部署、未访问任何项目服务器。未读取或输出密码、Token、SSH私钥；既有日志与工作区修改保留。
+
+## AINOVEL-GITHUB-CLI-VERIFIED-20261102-eccd6c0a
+
+- 时间：2026-11-02T22:23:55+08:00 Asia/Shanghai；代理 /root；关联 GITHUB-CLI-AUTH-20261102-3303217f、GITHUB-CLI-SETUP-20261102-eeeb2fc2。
+- 目的：用户已完成 GitHub 官方授权，验证并完成本机 GitHub HTTPS、仓库管理与 Codespaces 访问配置。
+- 影响范围：此前安装的 GitHub CLI 2.103.3、本机 CLI 的 github.com HTTPS 登录配置与系统凭据库；本机 .git/config 的 github 远程为 https://github.com/Chenyi-1999/ainovel.git；CHANGELOG.md 追加本条。原 Gitee origin 与 main 上游仍为 origin；应用代码和运行配置未变。
+- 实际认证：auth login 成功退出；auth status 成功，当前账号 Chenyi-1999、Active=true、存储位置 keyring、Git 协议 https。授权范围为 codespace/gist/read:org/repo/workflow；没有打印、读取或写入项目中的Token/密码/私钥。现有 Git credential helper 为 manager，未另行替换全局其他主机配置。
+- 实际检查：仓库API确认 Chenyi-1999/ainovel 为 public、非归档，admin/maintain/pull/push/triage 均为 true；git push --no-verify --dry-run github main:main 成功退出0，预演显示将新建main，未真实推送且跳过本地pre-push hook。仓库 Codespaces API 返回成功，total_count=0；仅确认访问权限，不代表已创建/启动环境或验证配额。最终 git ls-remote 成功且无refs，CLI协议回读https。
+- 验证边界：尚无 .devcontainer，完整项目云端运行需后续准备独立开发配置；未运行应用测试/模型调用（仅认证配置）。本条追加后执行 git diff --check；本次不包含首次公开源码/历史上传。
+- Git/部署：未提交、未推送、未发布Release；未创建/启动Codespace、未部署、未访问81/152/188等任何项目服务器。仅CHANGELOG保留工作区修改，已有记录未覆盖。
+
+
+## AINOVEL-PUBLISH-20261102T223527-01
+
+- 时间：2026-11-02T22:36:56.709904+08:00 Asia/Shanghai；代理/root；本地历史只读检查/root/publish_history_check（explorer）。目的：按用户“提交并发布”，提交既有GitHub关联/认证记录，并首次将当前项目完整main历史同步GitHub，继续保留Gitee和188。
+- 文件：CHANGELOG.md。保留他轮已追加的四条GitHub配置/验证记录，新增本条；无业务代码、依赖、模型配置或数据库变更，原Gitee origin和main上游不改。GitHub HTTPS目标Chenyi-1999/ainovel实际为PUBLIC/empty，Gitee main为ee3eaba。
+- 发布检查：检查ee3eaba可达12提交、230唯一对象/162blob，真实.env、.secrets、.reference-sources、deploy/reference-lab/private、artifacts、数据库及私钥文件路径未跟踪；指定令牌/私钥/长键赋值模式命中0。仅.env.example占位符及明确测试假值；无catalog.json/上游原文包。公开deploy/reference-lab代码/配置与来源索引为有意保留的项目文件，private目录不包含，不能将其误判为应删整个公开目录；未重写历史。模式扫描不保证穷尽所有秘密类别。新增CHANGELOG差异扫描及diff--check通过，仅既有换行提示。
+- 188只读核对：/opt/ainovel HEAD=ee3eaba且干净，5主容器Running/noOOM，API/DB/Redis healthy，Web/Worker无独立healthcheck，公开18110健康200。仅文档变更，无需重建容器或重复此前134后端/13前端/真实5099字测试；本轮不运行新应用测试或模型调用，不改数据/凭据。
+- 边界：未创建Codespace、GitHub Release或新版本tag；本次发布是现有源码main。未访问81；ssh-G核对itemkeep-server仍为152.136.236.238/root，152仅作188管理中转，不操作该服务器项目。D盘新专用publish-transfer目录用于后续Git bundle传输，不称新备份。
+- Git/部署状态：本条写入时尚未提交/推送；下一步提交并推送main到Gitee及GitHub，之后记录实际发布结果并将最终文档快进同步188，不重建已在线应用。未打印/写入Token、密码或私钥。
