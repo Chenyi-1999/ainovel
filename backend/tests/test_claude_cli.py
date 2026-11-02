@@ -185,7 +185,7 @@ def test_cli_models_are_configured_and_transport_read_only(client, fake_cli, mon
 def test_cli_real_gateway_preserves_worker_cancellation_fence(client, novel, fake_cli):
     content = "药师辨认古药，决定入城。" * 30
     task = job(client, novel, "write")
-    calls = fake_cli(envelope(result=json.dumps({"title": "古药", "content": content})),
+    calls = fake_cli(envelope(result=json.dumps({"title": "古药", "scenes": [{"id": 1, "content": content}]})),
                      callback=lambda: client.post(f"/api/jobs/{task}/cancel"))
     worker.run_job(*worker.claim_job())
     assert len(calls) == 1  # Existing checkpoint stops the subsequent audit call.

@@ -8,14 +8,16 @@ from app.auth import COOKIE
 from app.db import Chapter, Job, Memory, Session, now
 from app.services import retrieve_memory
 
-CONTENT = "药师在山门前辨认出失传的药草。他没有贸然吞服，而是记下叶脉的走向，决定入城查访。" * 8
+SCENES = ["药师在山门前辨认出失传的药草。他没有贸然吞服，而是记下叶脉的走向，决定入城查访。" * 16] * 3
+CONTENT = "\n\n".join(SCENES)
 
 
 def model_success(novel_id, job_id, purpose, prompt, system, **kwargs):
     if purpose == "write":
-        return json.dumps({"title": "山门古药", "content": CONTENT}, ensure_ascii=False)
+        index = json.loads(prompt.rsplit("\n", 1)[1])["section_id"]
+        return json.dumps({"title": "山门古药", "scenes": [{"id": index, "content": SCENES[index - 1]}]}, ensure_ascii=False)
     if purpose == "audit":
-        return json.dumps({"report": "没有严重冲突", "content": ""}, ensure_ascii=False)
+        return json.dumps({"report": "没有严重冲突", "replacements": []}, ensure_ascii=False)
     if purpose == "confirm":
         return json.dumps({"memories": [{"kind": "summary", "content": "药师记下叶脉，决定入城查访。", "evidence_quote": "决定入城查访", "visibility": "public"},
                                        {"kind": "character", "content": "药师谨慎，不贸然试药。", "evidence_quote": "他没有贸然吞服", "visibility": "public"}]}, ensure_ascii=False)
@@ -86,7 +88,7 @@ def test_partial_batch_retry_resumes_without_duplicates(client, novel, monkeypat
     attempts = 0
     def flaky(*args, **kwargs):
         nonlocal attempts
-        if args[2] == "write":
+        if args[2] == "write" and json.loads(args[3].rsplit("\n", 1)[1])["section_id"] == 1:
             attempts += 1
             if attempts == 2:
                 raise ValueError("模型接口限流，请稍后重试")

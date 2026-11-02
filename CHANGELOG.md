@@ -134,3 +134,34 @@
 - Git：功能提交a74b7f9cd0d5a82481b5761cd497b1f2fec1d585已成功推送Gitee main（dda1db6→a74b7f9），Git bundle验证通过，188开发工作树快进至同提交且干净；原文包/上游代码/凭据/备份未入Git。提交前实际私有值和完整来源原文/长块排除扫描、Python语法、差异检查通过。本条随后作为文档提交同步。
 - 部署与验收：18110公开健康200，5主项目容器Running且无OOM，API/DB/Redis healthy；Web/Worker由实际UI/数据库检查补足，无伪称独立health。43来源条目重建后SHA及原文/66块、全部预览、旧8模板/版本、5Skill均核对通过；原文参考任务422。私有.env未变，自己的Buildx构建器已停止，试用服务与网络0、18020–18023仍关闭，7试用卷保留。
 - 证据：artifacts/reference-prompts/verify-result.json、postgres-import.json、catalog-checkpoint.json、runtime-audit.json、catalog-desktop.jpg、catalog-mobile.jpg。未追加付费生成或变更登录，152仅SSH中转，未操作81。
+
+
+## AINOVEL-LENGTH-20261102-01
+
+- 时间：2026-11-02T21:08:52.971527+08:00 Asia/Shanghai；代理/root；后端/root/length_backend_fix，前端/root/length_frontend_fix，只读诊断与复核/root/length_diagnosis；使用smart-development及frontend-design-codex。
+- 目的与证据：用户设置4800但生成不足，生产只读核对最新写作任务payload确为4800，正文1313字符/排空白1279字仍succeeded。代码只检查100字符且审稿无篇幅约束；并非漏传该任务参数，无证据证明token上限截断。既有任务未记录首稿，不能凭usage token定位缩水阶段。
+- 文件与行为：backend/app/length.py、worker.py、skills.py及test_length.py/test_workflow.py；frontend/App、SkillLibrary、styles、新wordCount.ts及测试；scripts/verify_postgres.py、README、docs/ARCHITECTURE、CHANGELOG。按正文非空白Unicode码点计数（含标点、不含标题），目标整数±10%；原有审稿调用负责扩压，最终返回及存储前硬校验，越界修订不覆盖合格首稿、报告说明。每章仍最多2次调用，批次已保存进度保留；新成功结果附last_length/lengths。正文/Skill共用设置，页面显示允许范围及实际计数；旧章节不自动重写，confirm/rewrite合同不变。
+- 实际检查：后端targeted45通过，全量78通过/1 Windows POSIX跳过/1既有anyio警告；前端12通过，本机及188两镜像构建通过；独立只读审查无阻断。188独立ainovel_verify PostgreSQL（mock模型）通过批量写作/逐章实际计数与统计、记忆审核、来源失效、实际并发锁/幂等及导出；未操作用户作品。真实4800生成与浏览器/生产更新尚未执行，不伪称通过。
+- 备份：D盘已提交基线5e642f3源码快照，ZIP CRC/成员SHA通过，SHA256 b186a6d6b390c8b7a7341e46118fd997d14ef53a90406a25be1b1023328a4d9b；任务开始时干净，不含进行中修复/私有配置/数据/来源包，应用恢复未测、非完整备份；归档索引/管理记录已追加。
+- 状态：本轮尚未Git提交/推送或切换生产镜像；188专用暂存/构建器用于构建和独立PG验证，下一步一致性数据库备份后代码更新（无DDL/目录导入）与真实新测试书。152仅SSH管理中转，未操作81或无关服务。
+
+
+## AINOVEL-LENGTH-20261102-02（关联 LENGTH-01）
+
+- 时间：2026-11-02T21:28:27.109315+08:00 Asia/Shanghai；代理/root；只读架构及审查/root/length_generation_design（architect/Astra），分节实现/root/length_scene_fix。
+- 实际部署与备份：188 API/Worker停止后pg_dump，D盘数据备份GPT-AINovel__2026-11-02_210854__数据备份__字数验收修复前数据库.zip，SHA256 f911821fe1c8296d5ec8e3f590751968d48e4d99a3665efcd92ebf2bcc2a7aa8；pg_restore目录/ZIP CRC/成员SHA通过，未实际恢复，非完整备份，源dump及镜像回退标签保留。01代码已部署，5小说/9章/32记忆原字段hash及.envhash不变，无DDL及目录导入。
+- 失败与证据：独立新测试书4800字，第一次write+audit最终1468字，2调用7642输入/2188输出token，硬校验fail且无Chapter。并非token预算耗尽。Astra冻结分节JSON+按ID局部整体替换方案后第二次实测仍3488字，2调用17559输入/4308输出；实际write/audit均max18000、finish_reason=stop，首稿3338（733/636/553/463/408/545），审稿仅把首节改883，总3488，仍无Chapter。两次失败完整保留，不缩小目标或重复相同提示试运气；所有既有用户章节hash一致。合计4调用25201输入/6496输出token，失败可能计费，不伪称通过。
+- 文件与行为：backend/app/length.py、worker.py、gateway.py、test_length.py/test_gateway_length.py/test_workflow.py/test_claude_cli.py；分节严格唯一完整ID、局部替换不追加、只有全章总±10硬验收；系统级篇幅/格式合同与审稿模板规则保留。新增日志只含字数/token数及白名单finish_reason，不记录正文/提示词/凭据。针对57通过，全118通过/1Windows POSIX跳过/既有anyio警告；Astra只读复核无阻断；188独立PG及构建通过，分节版本实际部署且chapters/memories/prompts完整表hash/.env一致。前端设置互通与失败显示已检查，390宽无页面横向溢出。
+- 进一步调整：两调用不能稳定交付已被实测，已向用户明确说明改用有界逐节write+一次audit，4800每次尝试最多7、6000最多9、20章最多180，重试另计。Astra冻结固定节数、按已写实际动态分配剩余预算、每调用前行锁续租/取消检查、最终整章事务保存；不写中间用户Chapter、不提前把半章当完整。此逐节版正在实现，尚未部署/真实验证，不能将118测试结果归于未完成新版本。
+- 运行与Git：第三阶段前端已13测试通过/本机构建通过，远端构建中；一次新暂存目录缺失导致前端上传失败，创建该专用目录后重试构建，不涉及生产变更。Git尚未提交/推送；证据artifacts/length-smoke/{attempt-1-failed,attempt-2-scenes,attempt-2-metadata}.json及失败截图，私有文件不入Git。188为目标，152仅SSH中转，未操作81/无关服务。
+
+
+## AINOVEL-LENGTH-20261102-03（关联 LENGTH-02）
+
+- 时间：2026-11-02T21:41:05.241423+08:00 Asia/Shanghai；代理/root；有界方案设计及只读复核/root/length_generation_design（architect/Astra），后端/root/length_scene_fix，前端/root/length_frontend_fix；根代理整合和独立PG/生产/浏览器验收。
+- 最终文件与行为：backend/app/length.py、worker.py、skills.py、gateway.py；tests/test_length.py/test_gateway_length.py/test_workflow.py/test_claude_cli.py；frontend/App/SkillLibrary/styles/wordCount.ts及tests/word-count.test.mjs；scripts/verify_postgres.py、新verify_length_lease_postgres.py；README、DEPLOYMENT、docs/ARCHITECTURE、CHANGELOG。固定ceil(target/800)次单节write加一次audit，不循环补写；按已生成实数动态分配200..原目标预算，完整前节输入与首/中/末节约束保留；仅当前唯一ID、仅首标题采用、审稿按ID整体替换。字数仍全章±10硬验收，最终存储事务再次核对。每call前Job行锁校owner/status/cancel并续600秒租约，网络调用不持锁，不存中间Chapter。每次尝试4800最多7、6000最多9、20章最多180，重试/恢复另计；Skill和页面说明同步，字数与批次上限实时计算。旧章节/模板/原文/记忆不自动修改。
+- 实际测试：最终后端targeted73通过、全量134通过/1Windows POSIX跳过/既有anyio警告；前端13通过，本机及188生产构建通过。Astra只读复核无阻断。188独立PG验证工作流/实际并发revision和幂等/计数统计通过；新增独立PG脚本验证续租阻止后续接管、renew与SKIP LOCKED实际竞态只有一个owner、旧owner不能续租或通过保存围栏，无模型调用，删除的仅脚本新建测试行。没有用SQLite控制流测试替代PG锁验证。
+- 真实生成：同一独立测试作品/同一4800目标与冻结MuMu模板，唯一逐节尝试成功，正文5099（允许4320–5280），首稿即合格、审稿未修改；实际节长828/1190/866/1018/862/335，动态预算800/795/696/639/449/200，所有7次finish_reason=stop，max_tokens按预算5600..7400、审稿18000。6write+1audit共69139输入/5332输出token；含02两个失败累计11次调用94340输入/11828输出token，不遗漏失败用量。TXT含完整正文，所有此前用户章节hash一致且版本不变；测试书保留供查看。样本仅证明本次达标，修辞/悬念仍需作者审阅，不保证所有题材/模型每次成功或长期文学质量。
+- 生产与数据：188:/opt/ainovel运行逐节版，无DDL/目录再导入，更新前后chapters/memories/prompt_templates完整表hash及.env一致。DB/Redis未重建，专用旧镜像/dump保留。前端最后修正桌面换行避免计数说明挤压书名，已独立重建Web；立即健康探测曾连接重置，随后公开健康200，不重复付费测试。152仅SSH管理中转，未操作81/无关服务，试用服务保持停用。
+- 浏览器：桌面/390宽结果显示目标4800、实际5099、允许范围一致；编辑器计数5099；主编辑与Skill设置双向同步，4800显示7调用、5000显示8调用；完整手动复制正文与编辑器一致、readonly且全选，未追加OS自动剪贴板读回承诺。手机无页面横向溢出，控制台warning/error为空；最终CSS换行在生产桌面复核通过。证据artifacts/length-smoke/verify-result.json、attempt-3-sequential.json、attempt-3-metadata.json、chapter.txt及截图。备份沿用01/02，D盘索引和管理记录保留；非完整备份，应用恢复未测。
+- Git状态：本条写入时本轮尚未提交/推送；接下来提交上述公开代码/测试/文档并同步188开发工作树、停止本次专用构建器和检查最终运行状态，不包含私有来源包、凭据、测试正文或归档。

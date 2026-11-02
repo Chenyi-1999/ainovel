@@ -1,17 +1,17 @@
 import { matchingPrompts } from './studioPolicy';
 import { useEffect, useState } from 'react';
+import { allowedWordRange, writingCallLimit } from '../../wordCount';
 import { Api, Chapter, Empty, Feedback, Header, Prompt, taskNames, useOperation } from './shared';
 type Skill = { id: string; name: string; description: string; job_kind: string; inputs: any; outputs: any; steps: any[]; max_calls: number; permissions: string[]; requires_review: boolean };
 const inputNames: Record<string, string> = { novel: '当前作品', instructions: '附加指令', chapter: '目标章节', count: '章节数', target_words: '每章字数', selection: '待改写原文', outline: '可编辑大纲', draft_chapters: '章节草稿', rewrite_proposal: '待审核改写', report: '审稿报告', memory_candidates: '待审核记忆候选' };
 const describe = (value: any): string => Array.isArray(value) ? value.map(describe).join('、') : typeof value === 'string' ? inputNames[value] || value : JSON.stringify(value);
-export default function SkillLibrary({ api, novelId, chapters, chapterId, prompts, busy: jobBusy, onRun }: { api: Api; novelId?: string; chapters: Chapter[]; chapterId?: string; prompts: Prompt[]; busy: boolean; onRun: (kind: string, payload: any) => void }) {
+export default function SkillLibrary({ api, novelId, chapters, chapterId, prompts, busy: jobBusy, targetWords, onTargetWordsChange, onRun }: { api: Api; novelId?: string; chapters: Chapter[]; chapterId?: string; prompts: Prompt[]; busy: boolean; targetWords: string; onTargetWordsChange: (value: string) => void; onRun: (kind: string, payload: any) => void }) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [selected, setSelected] = useState('outline');
   const [instructions, setInstructions] = useState('');
   const [template, setTemplate] = useState('');
   const [target, setTarget] = useState(chapterId || '');
   const [selection, setSelection] = useState('');
-  const [words, setWords] = useState(1800);
   const [count, setCount] = useState(1);
   const { busy, error, run } = useOperation();
   useEffect(() => {
@@ -62,7 +62,7 @@ export default function SkillLibrary({ api, novelId, chapters, chapterId, prompt
             <b>产出</b> {describe(skill.outputs)}
           </p>
           <p>
-            <b>调用上限</b> {skill.max_calls} 次 · {skill.permissions.includes('model.generate') ? '使用已配置模型' : skill.permissions.join('、')}
+            <b>全局调用上限</b> {skill.max_calls} 次{kind === 'write' ? '（最多 20 章）' : ''} · {skill.permissions.includes('model.generate') ? '使用已配置模型' : skill.permissions.join('、')}
           </p>
         </div>
         <form
@@ -71,7 +71,7 @@ export default function SkillLibrary({ api, novelId, chapters, chapterId, prompt
             e.preventDefault();
             if (!novelId || !Object.prototype.hasOwnProperty.call(taskNames, kind) || (chapterRequired && !target)) return;
             const selectedTemplate = matchingPrompts(prompts, kind, novelId).find(p => p.id === template);
-            onRun(kind, { skill_id: skill.id, prompt_template_id: selectedTemplate?.id || null, instructions, target_words: words, count, ...(chapterRequired ? { chapter_id: target } : {}), ...(kind === 'rewrite' ? { selection } : {}) });
+            onRun(kind, { skill_id: skill.id, prompt_template_id: selectedTemplate?.id || null, instructions, target_words: Number(targetWords) || 1800, count, ...(chapterRequired ? { chapter_id: target } : {}), ...(kind === 'rewrite' ? { selection } : {}) });
           }}>
           <p className="studio-callout">点击执行会调用已配置的模型并计入用量。{kind === 'confirm' && '只提取候选；请到故事记忆中审核、编辑并采纳后定稿。'}{kind === 'rewrite' && '改写结果需在正文编辑页查看后替换。'}
           </p>{!novelId && <p className="studio-error">请先从书架选择一部作品。</p>
@@ -102,9 +102,11 @@ export default function SkillLibrary({ api, novelId, chapters, chapterId, prompt
               min={300}
               max={6000}
               step={100}
-              value={words}
-              onChange={e => setWords(Number(e.target.value))} />
+              value={targetWords}
+              onChange={e => onTargetWordsChange(e.target.value)} />
             </label>
+            <small className="target-words-note">允许 {allowedWordRange(Number(targetWords) || 1800).min}–{allowedWordRange(Number(targetWords) || 1800).max} 字（±10%）· 不含空白和标题，含标点、数字、字母和 emoji</small>
+            <small className="target-words-note">按当前设置，每章最多 {writingCallLimit(Number(targetWords) || 1800, count || 1).perChapter} 次，本批最多 {writingCallLimit(Number(targetWords) || 1800, count || 1).batchTotal} 次（含一次审稿，重试另计）。目标字数越高，模型调用越多并计入用量。</small>
           </div>
           }{kind === 'rewrite' && <label>待改写原文<textarea
             required

@@ -23,9 +23,9 @@ def complete(novel_id, job_id, purpose, prompt, system, max_tokens=1000):
     if purpose == 'outline':
         return json.dumps({'title':'验证作品','synopsis':'侦探寻找失踪的灯塔守望者','volumes':[]}, ensure_ascii=False)
     if purpose == 'write':
-        return json.dumps({'title':'灯塔','content':'夜色渐深，灯塔的光照亮海面。他在门前发现一封没有署名的信。'*12}, ensure_ascii=False)
+        return json.dumps({'title':'灯塔','scenes':[{'id':1,'content':('夜色渐深，灯塔的光照亮海面。他在门前发现一封没有署名的信。'*12)[:300]}]}, ensure_ascii=False)
     if purpose == 'audit':
-        return json.dumps({'report':'未发现冲突','content':''},ensure_ascii=False)
+        return json.dumps({'report':'未发现冲突','replacements':[]},ensure_ascii=False)
     if purpose == 'confirm':
         return json.dumps({'memories':[{'kind':'summary','content':'主角在灯塔门前发现匿名信。',
             'evidence_quote':'夜色渐深，灯塔的光照亮海面。','visibility':'public'}]},ensure_ascii=False)
@@ -49,9 +49,20 @@ with TestClient(main.app) as client:
     book = client.post('/api/novels', json={'premise':'灯塔与侦探'}).json()
     prefix = '/api/novels/'+book['id']
     finish(client.post(prefix+'/jobs',json={'kind':'outline'}).json())
-    finish(client.post(prefix+'/jobs',json={'kind':'write','count':2,'target_words':300}).json())
+    writing = client.post(prefix+'/jobs',json={'kind':'write','count':2,'target_words':300}).json()
+    finish(writing)
     chapters = client.get(prefix+'/chapters').json()
     assert len(chapters) == 2
+    assert all(270 <= sum(not char.isspace() for char in chapter['content']) <= 330 for chapter in chapters)
+    length_result = client.get('/api/jobs/'+writing['id']).json()['result']
+    assert len(length_result['lengths']) == 2
+    assert length_result['last_length'] == length_result['lengths'][-1]
+    for stats in length_result['lengths']:
+        chapter = next(row for row in chapters if row['id'] == stats['chapter_id'])
+        assert stats['final_words'] == sum(not char.isspace() for char in chapter['content'])
+        assert (stats['target_words'], stats['min_words'], stats['max_words']) == (300,270,330)
+        assert stats['counting_method'] == 'non_whitespace_codepoints'
+        assert (stats['generation_calls'], stats['model_calls']) == (1,2)
     assert client.get(prefix+'/memories').json() == []
     for chapter in chapters:
         extraction = client.post(prefix+'/jobs',json={'kind':'confirm','chapter_id':chapter['id']}).json()

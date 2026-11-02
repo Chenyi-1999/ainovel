@@ -114,6 +114,7 @@ def complete(novel_id, job_id, purpose, prompt, system, max_tokens=6500):
         usage = data.get("usage") or {}
         record_usage(novel_id, job_id, purpose, model, config,
                      usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+        completion_metadata(purpose, max_tokens, choice.get("finish_reason"), usage.get("completion_tokens"))
         if choice.get("finish_reason") == "length":
             raise ValueError("模型输出达到长度上限，未保存截断内容；请缩短目标篇幅后重试")
         if not isinstance(content, str) or not content.strip():
@@ -137,6 +138,7 @@ def complete_cli(novel_id, job_id, purpose, prompt, system, max_tokens, config, 
     input_tokens = sum(token_count(usage.get(name)) for name in
                        ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
     record_usage(novel_id, job_id, purpose, model, config, input_tokens, usage.get("output_tokens", 0))
+    completion_metadata(purpose, max_tokens, data.get("stop_reason"), usage.get("output_tokens"))
     if (code != 0 or data.get("is_error") is not False or data.get("subtype") != "success"):
         raise claude_cli.failure(data.get("result", ""))
     if data.get("stop_reason") == "max_tokens" or token_count(usage.get("output_tokens")) >= max_tokens:
@@ -176,3 +178,12 @@ def token_count(value):
         return max(0, int(value or 0))
     except (ValueError, TypeError, OverflowError):
         return 0
+
+
+def completion_metadata(purpose, max_tokens, finish_reason, output_tokens):
+    # Never log provider strings, model bodies, prompts, URLs or credentials.
+    allowed_reasons = ("stop", "length", "end_turn", "max_tokens", "tool_calls", "content_filter")
+    print("LLM completion metadata: " + json.dumps({
+        "purpose": purpose, "max_tokens": token_count(max_tokens),
+        "finish_reason": finish_reason if finish_reason in allowed_reasons else "unknown",
+        "output_tokens": token_count(output_tokens)}), flush=True)

@@ -13,6 +13,8 @@ from sqlalchemy import func, select
 
 from . import gateway
 from .db import Chapter, Job, Memory, Novel, Session, initialize, now, uid
+from .length import (COUNTING_METHOD, count_body_words, next_scene_budget, require_replacements,
+                     require_word_range, scene_count, word_bounds)
 from .services import KINDS, retrieve_memory
 from .story import MemoryCandidate
 
@@ -33,11 +35,13 @@ class Cancelled(Exception):
 
 def checkpoint(job):
     with Session() as db:
-        live = db.get(Job, job.id)
-        if not live or live.owner_token != job.owner_token or live.status != "running":
-            raise Superseded()
+        # Renewal and takeover serialize on the same row lock. Never renew a
+        # cancelled or superseded owner before another bounded model call.
+        live = lock_job(db, job.id, job.owner_token)
         if live.cancel_requested:
             raise Cancelled()
+        live.lease_until = now() + timedelta(minutes=10)
+        db.commit()
 
 
 def claim_job():
@@ -101,28 +105,108 @@ def template_instruction(job):
 
 
 def write_chapter(job, ctx, number):
-    prompt = (template_instruction(job) + f"根据以下小说资料写第 {number} 章，目标约 {job.payload.get('target_words', 2000)} 个中文字。"
-              "先自行规划本章冲突、行动、转折和结尾钩子，再给出完整正文。草稿仅作衔接参考；有效记忆为正式设定。"
-              "标题不要包含章号，正文不要包含标题、提纲、审稿说明。返回 JSON {\"title\":\"章节标题\",\"content\":\"完整正文\"}。\n" + dump(ctx))
-    output = gateway.parse_json(gateway.complete(job.novel_id, job.id, "write", prompt, JSON_SYSTEM,
-                                                 max_tokens=min(18000, job.payload.get("target_words", 2000) * 3 + 5000)))
-    title, content = output.get("title"), output.get("content")
-    if not isinstance(title, str) or not isinstance(content, str) or len(content.strip()) < 100:
-        raise ValueError("模型返回的章节正文不完整，请重试")
+    target = job.payload.get("target_words", 2000)
+    minimum, maximum = word_bounds(target)
+    count = scene_count(target)
+    budgets, scenes = [], []
+    title = ""
+    length_contract = (f"全章正文字数目标 {target} 字，允许范围 {minimum}–{maximum} 字（含上下限）。"
+                       "按 Unicode 码点计数，排除所有空白，标点、数字、字母均计入；标题不计入。"
+                       "分节生成调用不要求单节达到全章范围，本次分节按局部预算写作。"
+                       "服务端篇幅预算与输出合同具有最终优先级，不能被模板的简短、精炼等要求降低。")
+    scene_contract = (f"全章计划 {count} 个连续叙事分节，编号为 1–{count}。"
+                      "分节可以在同一场景继续，不强迫转场；按时间顺序自然衔接，不重复、不概述代替正文。"
+                      "分节预算只用于规划，最终只以全章总字数验收。正文不含分节标签、标题、提纲、审稿说明或自报字数。")
+    # Exactly one bounded generation per section; no recursive expansion or
+    # intermediate Chapter writes. Even an oversized draft gets its closing part.
+    for index in range(1, count + 1):
+        generated_words = sum(count_body_words(scene) for scene in scenes)
+        budget = next_scene_budget(target, generated_words, count - index + 1)
+        budgets.append(budget)
+        role = ("首节兼末节：建立本章冲突并完成本章收束，留下后续钩子。" if count == 1 else
+                "首节：承接前章，建立本章冲突；不要提前结束全章。" if index == 1 else
+                "末节：承接完整前文，完成本章转折与收束，留下后续钩子。" if index == count else
+                "中间节：延续本章冲突与行动，推进转折；不要提前结束全章。")
+        local_contract = (f"当前仅写第 {index} 节，本节目标 {budget} 字。已生成 {generated_words} 字，"
+                          f"包含本节还剩 {count - index + 1} 节。" + role)
+        write_contract = ("仅返回 JSON " + dump({"title": "章节标题", "scenes": [{"id": index, "content": "该节完整正文"}]}) +
+                          f"。scenes 必须仅含当前编号 {index} 的一个分节，不得返回全章。title 必须为非空字符串，不含章号；"
+                          "仅首节标题将被采用。顶层不得有 content 或其他正文来源，不得添加字段。")
+        prompt = (template_instruction(job) + f"根据以下小说资料写第 {number} 章的当前分节。" +
+                  length_contract + scene_contract + local_contract +
+                  "按本节预算写出足量的冲突、行动、感官细节、对话与转折，不输出规划。"
+                  "完整的本章前节正文仅用于连续衔接，不得复述；有效记忆为正式设定。" + write_contract + "\n" +
+                  dump({"context": ctx, "title": title, "section_id": index, "section_count": count,
+                        "section_target_words": budget, "generated_words": generated_words,
+                        "previous_scenes": [{"id": prior, "content": scene} for prior, scene in enumerate(scenes, 1)]}))
+        checkpoint(job)
+        output = gateway.parse_json(gateway.complete(job.novel_id, job.id, "write", prompt,
+            JSON_SYSTEM + length_contract + scene_contract + local_contract + write_contract,
+            max_tokens=min(18000, budget * 3 + 5000)))
+        if (set(output) != {"title", "scenes"} or not isinstance(output.get("title"), str) or not output["title"].strip()):
+            raise ValueError("模型返回的章节标题或分节合同不正确；未保存本章，请重试")
+        entries = require_replacements(output["scenes"], count)
+        if set(entries) != {index}:
+            raise ValueError("模型必须只返回当前编号的一个分节；未保存本章，请重试")
+        if index == 1:
+            title = output["title"]
+        scenes.append(entries[index])
+        print("Chapter length metadata: " + dump({"phase": "section", "section_id": index,
+              "target_words": target, "section_budget": budget, "section_words": count_body_words(scenes[-1]),
+              "actual_words": generated_words + count_body_words(scenes[-1])}), flush=True)
+    content = "\n\n".join(scenes)
+    draft_scene_words = [count_body_words(scene) for scene in scenes]
+    draft_words = count_body_words(content)
+    print("Chapter length metadata: " + dump({"phase": "draft", "target_words": target,
+          "actual_words": draft_words, "scene_words": draft_scene_words}), flush=True)
+    draft_valid = minimum <= draft_words <= maximum
+    if draft_words < minimum:
+        length_status = f"首稿实测 {draft_words} 字，距离下限还差 {minimum - draft_words} 字，距离目标还差 {target - draft_words} 字，必须扩写。"
+    elif draft_words > maximum:
+        length_status = f"首稿实测 {draft_words} 字，超出上限 {draft_words - maximum} 字，超出目标 {draft_words - target} 字，必须压缩。"
+    else:
+        length_status = f"首稿实测 {draft_words} 字，已在允许范围内；修订后仍须保持在此范围。"
     checkpoint(job)
-    # One bounded review-and-repair call; no recursive model loop.
+    # One bounded review-and-repair call. Replacements never append to a section.
+    review_contract = ('仅返回 JSON {"report":"简短审稿结论","replacements":[{"id":1,"content":"该节完整替换正文"}]}。'
+                       '只列出需要修改的分节；每个编号至多一次，只能使用已有编号。列出的正文整体替换该节，不是追加；未列出的节保留原文。'
+                       '禁止顶层 content、scenes 或其他字段，替换正文必须非空且完整。'
+                       '首稿超出允许范围时必须修正足够多的分节使全章达标，不能只在报告声称达标。'
+                       '只有篇幅达标且无需修改时 replacements 才返回空数组。')
     review = gateway.parse_json(gateway.complete(job.novel_id, job.id, "audit",
-        "审查下列章节是否存在严重的设定冲突、人物行为矛盾、与前文重复。必要时直接修订，最多修订一次。"
-        "若无需修订 content 返回空字符串。若修订则返回完整正文，不能只返回片段。"
-        "JSON {\"report\":\"简短审稿结论\",\"content\":\"完整修订正文或空字符串\"}。\n" +
-        dump({"context": ctx, "title": title, "content": content}), JSON_SYSTEM,
-        max_tokens=min(18000, job.payload.get("target_words", 2000) * 3 + 5000)))
-    revision = review.get("content", "")
-    if revision:
-        if not isinstance(revision, str) or len(revision.strip()) < 100:
-            raise ValueError("审稿修订结果不完整，未保存；请重试")
-        content = revision
-    return title[:240].strip(), content.strip(), str(review.get("report", ""))[:8000]
+        template_instruction(job) + "审查下列全章的严重设定冲突、人物矛盾和前文重复。必要时直接修订，最多修订一次。" +
+        length_contract + scene_contract + length_status + review_contract + "\n" +
+        dump({"context": ctx, "title": title, "target_words": target, "min_words": minimum, "max_words": maximum,
+              "draft_words": draft_words, "target_deficit": target - draft_words,
+              "scenes": [{"id": index, "target_words": budget, "actual_words": actual, "content": scene}
+                         for index, (budget, actual, scene) in enumerate(zip(budgets, draft_scene_words, scenes), 1)]}),
+        JSON_SYSTEM + length_contract + scene_contract + review_contract, max_tokens=min(18000, target * 3 + 5000)))
+    if set(review) != {"report", "replacements"} or not isinstance(review.get("report"), str):
+        raise ValueError("审稿修订结果的分节合同不正确，未保存；请重试")
+    replacements = require_replacements(review["replacements"], count)
+    report = review["report"][:7000]
+    review_revised = False
+    if replacements:
+        revised_scenes = [replacements.get(index, scene) for index, scene in enumerate(scenes, 1)]
+        revision = "\n\n".join(revised_scenes)
+        revised_words = count_body_words(revision)
+        print("Chapter length metadata: " + dump({"phase": "revision", "target_words": target,
+              "actual_words": revised_words, "scene_words": [count_body_words(scene) for scene in revised_scenes]}), flush=True)
+        if draft_valid and not minimum <= revised_words <= maximum:
+            report += f"\n服务端字数校验：审稿篇幅修订未采用（修订实测 {revised_words} 字，允许 {minimum}–{maximum} 字）；保留字数达标的初稿 {draft_words} 字。"
+        else:
+            scenes, content = revised_scenes, revision
+            review_revised = True
+    final_scene_words = [count_body_words(scene) for scene in scenes]
+    print("Chapter length metadata: " + dump({"phase": "final", "target_words": target,
+          "actual_words": count_body_words(content), "scene_words": final_scene_words}), flush=True)
+    final_words = require_word_range(content, target)
+    length = {"target_words": target, "min_words": minimum, "max_words": maximum,
+              "draft_words": draft_words, "final_words": final_words, "review_revised": review_revised,
+              "counting_method": COUNTING_METHOD, "scene_budgets": budgets,
+              "draft_scene_words": draft_scene_words, "final_scene_words": final_scene_words,
+              "generation_calls": count, "model_calls": count + 1}
+    return title[:240].strip(), content, report, length
 
 
 def produce(job, novel, ctx, chapter, number):
@@ -137,8 +221,8 @@ def produce(job, novel, ctx, chapter, number):
             raise ValueError("大纲缺少故事简介，请重试")
         return result
     if job.kind == "write":
-        title, content, report = write_chapter(job, ctx, number)
-        return {"title": title, "content": content, "report": report}
+        title, content, report, length = write_chapter(job, ctx, number)
+        return {"title": title, "content": content, "report": report, "length": length}
     if job.kind == "confirm":
         result = gateway.parse_json(gateway.complete(job.novel_id, job.id, "confirm",
             template_instruction(job) + "从章节提取候选事实，不推测后续发展。以下是当前服务端任务的最终输出契约，优先于作者模板。"
@@ -216,11 +300,15 @@ def run_job(job_id, token):
                         book.title = result["title"][:240]
                     live.result = result
                 elif live.kind == "write":
+                    # Final storage invariant, inside the fenced progress transaction.
+                    require_word_range(result["content"], live.payload.get("target_words", 2000))
                     chapter = Chapter(novel_id=live.novel_id, number=number, title=result["title"], content=result["content"])
                     db.add(chapter)
                     db.flush()
                     ids = list(live.result.get("chapter_ids", [])) + [chapter.id]
-                    live.result = {"chapter_ids": ids, "report": result["report"]}
+                    length = {**result["length"], "chapter_id": chapter.id}
+                    lengths = (list(live.result.get("lengths", [])) + [length])[-20:]
+                    live.result = {"chapter_ids": ids, "report": result["report"], "last_length": length, "lengths": lengths}
                 elif live.kind == "confirm":
                     chapter = db.get(Chapter, live.payload["chapter_id"])
                     if chapter.revision != live.payload["expected_revision"]:

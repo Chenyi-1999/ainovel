@@ -38,6 +38,7 @@ import MemoryStudio from "./components/Studio/MemoryStudio";
 import ForeshadowStudio from "./components/Studio/ForeshadowStudio";
 import RelationStudio from "./components/Studio/RelationStudio";
 import { canLeaveStudio, Memory as StudioMemory, Prompt } from "./components/Studio/shared";
+import { allowedWordRange, countNonWhitespaceCodePoints, writingCallLimit } from "./wordCount";
 
 type Novel = {
   id: string;
@@ -781,6 +782,7 @@ function App() {
       {count ? <i className="nav-count">{count}</i> : null}
     </button>
   );
+  const currentWritingLimit = writingCallLimit(Number(targetWords) || 1800, Number(chapterCount) || 1);
   return (
     <div className="app-shell">
       {mobileOpen && (
@@ -1106,7 +1108,7 @@ function App() {
             {page === "settings" ? null : page === "prompts" ? (
               <PromptLibrary api={api} novelId={novel?.id} onChanged={() => refreshPrompts().catch(e => setError(e.message))} />
             ) : page === "skills" ? (
-              <SkillLibrary api={api} novelId={novel?.id} chapters={chapters} chapterId={chapter?.id} prompts={prompts} busy={busy || activeJobs.length > 0} onRun={createJob} />
+              <SkillLibrary api={api} novelId={novel?.id} chapters={chapters} chapterId={chapter?.id} prompts={prompts} busy={busy || activeJobs.length > 0} targetWords={targetWords} onTargetWordsChange={setTargetWords} onRun={createJob} />
             ) : !novel ? (
               <section className="welcome-panel">
                 <div className="welcome-copy">
@@ -1200,19 +1202,22 @@ function App() {
                             ))}
                           </select>
                         </label>
-                        <label className="generate-option">
-                          每章约{" "}
-                          <input
-                            aria-label="每章目标字数"
-                            type="number"
-                            min="300"
-                            max="6000"
-                            step="100"
-                            value={targetWords}
-                            onChange={(e) => setTargetWords(e.target.value)}
-                          />{" "}
-                          字
-                        </label>
+                        <div className="target-words-control">
+                          <label className="generate-option">
+                            每章约{" "}
+                            <input
+                              aria-label="每章目标字数"
+                              type="number"
+                              min="300"
+                              max="6000"
+                              step="100"
+                              value={targetWords}
+                              onChange={(e) => setTargetWords(e.target.value)}
+                            />{" "}
+                            字
+                          </label>
+                          <small className="target-words-note">允许 {allowedWordRange(Number(targetWords) || 1800).min}–{allowedWordRange(Number(targetWords) || 1800).max} 字（±10%）</small>
+                        </div>
                         {chapter && (
                           <button
                             className="button outline"
@@ -1255,7 +1260,7 @@ function App() {
                     </button>}
                   </div>
                 </div>
-                {(page === "manuscript" || page === "outline") && <p className="model-call-note">生成、大纲、改写、审稿与记忆提取会调用已配置模型并计入用量。记忆候选须审核采纳后才会定稿；续写每章最多 2 次调用。</p>}
+                {(page === "manuscript" || page === "outline") && <p className="model-call-note">生成、大纲、改写、审稿与记忆提取会调用已配置模型并计入用量。记忆候选须审核采纳后才会定稿。{page === "manuscript" && `按当前设置续写每章最多 ${currentWritingLimit.perChapter} 次，本批最多 ${currentWritingLimit.batchTotal} 次（含一次审稿，重试另计）。目标字数越高，调用越多。字数不含空白和标题，含标点。`}</p>}
                 <div className="tabs">
                   {(["manuscript", "outline", "memory", "foreshadows", "relations", "tasks"] as Page[]).map(
                     (p) => (
@@ -1422,8 +1427,8 @@ function App() {
                           />
                           <div className="editor-foot">
                             <span>
-                              {editorText.length.toLocaleString()} 字符 · 约{" "}
-                              {Math.max(1, Math.ceil(editorText.length / 450))}{" "}
+                              {countNonWhitespaceCodePoints(editorText).toLocaleString()} 字 · 约{" "}
+                              {Math.max(1, Math.ceil(countNonWhitespaceCodePoints(editorText) / 450))}{" "}
                               分钟阅读
                               {editingLocked
                                 ? " · 任务进行中，暂时锁定编辑"
@@ -1810,6 +1815,9 @@ function App() {
                               {j.kind === "confirm" && j.status === "succeeded" && <p className="job-report">{j.result?.applied ? "记忆已由作者审核采纳。" : "候选已提取，尚未定稿。请到故事记忆审核并采纳。"}</p>}
                               {j.result?.report && (
                                 <p className="job-report">{j.result.report}</p>
+                              )}
+                              {j.kind === "write" && j.status === "succeeded" && j.result?.last_length && (
+                                <p className="job-report">最后一章字数：目标 {Number(j.result.last_length.target_words).toLocaleString()}，实际 {Number(j.result.last_length.final_words).toLocaleString()}（允许 {Number(j.result.last_length.min_words).toLocaleString()}–{Number(j.result.last_length.max_words).toLocaleString()}；不含空白和标题，含标点）</p>
                               )}
                             </div>
                             <div className="job-actions">
