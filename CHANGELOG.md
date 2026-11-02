@@ -74,3 +74,11 @@
 - 证据：忽略的artifacts/reference-lab/verify-result.json、checkpoint.json、runtime-audit.json、mumu-handwritten.txt、lite-writing.jpg；本机.reference-sources/README.md为源码索引。私有值不写日志或仓库。
 - 边界：IP/HTTP界面评估，无模型故不验收生成，MuMu向量功能禁用、CLI仅向导，不证明长篇质量。旧备份仅已提交源码，不包含本次运行卷、不称完整备份。
 - Git与部署：本条写入时尚未提交/推送；188部署与验收已完成，随后提交部署配置及记录到用户指定Gitee，源码/私有文件/验收数据不提交。
+
+## AINOVEL-LAB-DEPLOY-20261102-02（关联 DEPLOY-01）
+
+- 时间：2026-11-02T13:21:43+08:00 Asia/Shanghai；代理 /root。
+- 目的与文件：CHANGELOG.md 补记交付状态；未再变更业务、网关代码或运行配置。
+- Git：部署提交 ef61150dde1cbf5482c32b8934809313e053ebec 已成功推送 Gitee main（a0330fb→ef61150）；31文件，不包含第三方源码、私有凭据或验收数据。提交前Python语法、两组静态各5项、初始化--help、暂存差异检查与实际私有值扫描通过；本条随后作为文档提交同步。
+- 部署：188已同步29份公开部署文件并通过合并Compose config及nginx -t；私有配置保留。沿用DEPLOY-01的实际重建、11项HTTP、网络隔离及浏览器验收，不因文档再运行生成或重建。CLI终端连接已关闭，保留入口页供用户进入；四个最终演示标签保留。
+- 剩余边界不变：无模型配置，MuMu向量功能禁用；原18110保留、152仅SSH中转、未操作81。
