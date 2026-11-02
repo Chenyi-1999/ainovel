@@ -113,3 +113,17 @@
 - 最终检查：主项目5容器Running且无OOM，API/DB/Redis各自health均healthy，公开健康200；Web/Worker无独立healthcheck，已由实际UI/任务验证。体验容器与网络均0，18020–18023连接均拒绝，7个试用卷及源码/镜像保留，自己的Buildx构建器已停止。
 - 复制验收补充：最终手动复制入口已部署，浏览器文本框含完整当前正文、标题选项受尊重且selection全选为true；未触发保存或章节revision变化。自动剪贴板读回边界保持02所述。最终API/Worker/Web重建后，13项业务检查中的持久化核对通过；真实用量仍为3调用/1708输入/1268输出，没有额外付费复测。
 - 证据：artifacts/studio-smoke/runtime-audit.json及verify-result.json；旧数据与私有配置保留。余项仅为明确未承诺的自动全文图谱、向量检索、通用Skill和完整POV能力，非本轮基础功能遗漏。未操作81，152只管理中转。
+
+## AINOVEL-REFERENCE-PROMPTS-20261102-01
+
+- 时间：2026-11-02T19:31:17+08:00 Asia/Shanghai；代理/root；只读调查/root/catalog_mumu、/root/catalog_lite，后端/root/catalog_backend，前端/root/catalog_frontend；使用smart-development及沿用frontend-design-codex工作流。
+- 目的：按用户追加要求收录MuMu/Lite原有提示词内容，按用途分类，不再仅提供7原创；提示词与Skill继续分开，不新增原项目工具执行或模型配置。
+- 文件：backend/app/db.py、migrations.py、prompts.py、新prompt_catalog.py及test_prompt_catalog.py；frontend/PromptLibrary/PromptSource/SkillLibrary/shared/studioPolicy/styles与策略测试；scripts/build_reference_prompt_catalog.py、test_reference_prompt_catalog.py；README、DEPLOYMENT、docs/REFERENCE_PROMPTS、CHANGELOG。本机忽略目录.secrets/reference-prompt-catalog/保存私有原文包、MuMu许可副本、NOTICE及summary；artifacts/reference-prompts/保存校验与截图。原始检出保持干净，未执行上游Python或Skill聚合器。
+- 内容与实现：静态AST提取MuMu36模板、JSON/受限路径读取Lite7完整预设及66块；用途分10类，固定来源提交/文件/参数/原名/许可/原文SHA及块SHA。43条中16条保留写作规则并适配当前任务资料/输出合同，27条原文参考；各条原文均单独保留。第一次构建遇源Lite条件DSL被防护拒绝，随后将已审核的题材/去味条件转为明示适用条件说明，不执行DSL、不盲目激活全部分支。原文和块未改写。参考条目只能查看复制，不进入生成/Skill选择。
+- 数据与API：schema1→2仅为PromptTemplate加source_info JSON；元数据经列表/历史/导出导入/副本/Job快照保留，引用原文SHA验证、UUID5身份和整批事务/锁；同包重复导入跳过，冲突拒绝整批。参考预览不解释源变量，任务选择前后端双重拒绝。原7原创和已有1自定义及其版本保持，当前51条；Skill仍原5条。
+- 实际验证：backend全61通过/1跳过（Windows POSIX进程组）/1既有anyio弃用提示；新增16目录测试通过。frontend策略10通过，本机及188生产构建通过；root提取器5测试通过（不执行模块/Skill、路径穿越、原文含CRLF保留、条件失败关闭、适配输出合同剥离）。真实pack本机临时SQLite迁移/干跑/导入/重复全部通过，临时验证库在D盘；不当作历史备份。
+- PostgreSQL与生产：独立ainovel_verify库验证原工作流、实际并发/幂等；两并发目录导入一个新增43、另一个跳过43，无冲突；生产干跑43新增、apply43新增、再次apply43跳过。公开API逐条核对43原文和66块hash、全部预览、8既有模板及历史、5Skill不变，参考提交任务422。API/Worker/Web实际force-recreate后同样通过，目录指纹fe858c2642b02cd71313b511c919e26f7aa2177e11985e52848e0108683b19de。
+- 浏览器：来源/用途筛选实际MuMu36、Lite7，MuMu章节写作4；Lite v4完整原文14554字符readonly且selection全选；原24块含禁用说明块均保留；390宽页面无横向溢出。桌面/手机截图已保存，保留用户可直接浏览的主项目标签。未调用任何付费生成；未改变模型、密钥或登录配置。
+- 备份：源码基线D:\A_GPT\GPT-BackUp\GPT-AINovel\2026-11\GPT-AINovel__2026-11-02_191248__源码快照__原提示词目录导入前基线.zip，SHA256 6c6e0f36a5d8b9a72ef76e49d669dab7434b90f1e0fafd350eb2121d79dee784，为本轮开始时提交dda1db6源码、不含本轮新代码/原文包/数据；数据库D:\A_GPT\GPT-BackUp\GPT-AINovel\2026-11\GPT-AINovel__2026-11-02_191807__数据备份__原提示词目录导入前数据库.zip，SHA256 4b4062fa40bc54e1e0188d8b46997622a717297cc139774d114d3af71d345e5b，API/Worker停止后pg_dump，pg_restore目录/ZIP CRC/成员SHA通过；均未应用恢复、非完整备份，D盘索引及管理记录已追加。旧小说/章节/记忆原字段hash一致，.env hash未变，镜像回退标签与dump保留。
+- 部署与边界：188:/opt/ainovel已迁移/导入并运行；来源内容包不进Git或镜像，仅认证实例私有数据，MuMu许可/归属保留、Lite未附许可证状态不隐瞒。16适配是当前任务规则适配，并不运行完整原系统条件/注入引擎；27参考不伪称已接入工具。152仅SSH中转（本轮ssh -G复核为152.136.236.238/root），试用18020–18023保持关闭，未访问81或改无关项目。
+- Git：本条写入时尚未提交/推送本轮；下一步提交导入器/索引文档/测试与UI，不包含原文内容包，并同步188开发工作树。构建与传输暂存均D盘/188独立构建目录。

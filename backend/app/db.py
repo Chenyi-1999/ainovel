@@ -134,6 +134,7 @@ class PromptTemplate(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
     builtin: Mapped[bool] = mapped_column(Boolean, default=False)
     source_label: Mapped[str] = mapped_column(String(100), default="用户原创")
+    source_info: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class PromptRevision(Base):

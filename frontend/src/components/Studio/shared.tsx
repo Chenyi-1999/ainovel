@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 export type Api = <T = any>(path: string, init?: RequestInit) => Promise<T>;
-export type Prompt = { id: string; name: string; category: string; task_kind: string; genre_tags: string[]; description: string; body: string; novel_id: string | null; enabled: boolean; builtin: boolean; source_label: string; revision: number };
+export type PromptSourceBlock = { identifier?: string; name?: string; role?: string; enabled?: boolean; injection_order?: number; template_file?: string; body?: string; sha256?: string };
+export type PromptSourceInfo = { project?: string; repository?: string; commit?: string; key?: string; path?: string; license?: string; original_name?: string; original_category?: string; original_body?: string; raw_sha256?: string; parameters?: string[]; blocks?: PromptSourceBlock[]; compatibility?: 'adapted' | 'reference_only'; adapter_note?: string };
+export type Prompt = { id: string; name: string; category: string; task_kind: string; genre_tags: string[]; description: string; body: string; novel_id: string | null; enabled: boolean; builtin: boolean; source_label: string; source_info?: PromptSourceInfo; revision: number };
 export type Entity = { id: string; name: string; kind: string; aliases: string[]; description: string; revision: number };
 export type Memory = { id: string; kind: string; content: string; source_chapter_id?: string | null; source_revision?: number | null; evidence_quote?: string; provenance?: string; visibility?: string; known_by_entity_ids?: string[]; revision?: number; stale?: boolean; history?: Partial<Memory>[] };
 export type Chapter = { id: string; number: number; title: string; revision?: number };

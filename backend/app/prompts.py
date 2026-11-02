@@ -1,9 +1,10 @@
 """Original, declarative writing templates. Rendering never evaluates code."""
+import json
 import re
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select, text
 
 from .auth import require_auth
@@ -12,9 +13,29 @@ from .dependencies import database
 from .services import get_or_404
 
 router = APIRouter(prefix="/api/prompts", dependencies=[Depends(require_auth)])
-TaskKind = Literal["outline", "write", "rewrite", "audit", "confirm"]
-CATEGORIES = {"outline": "创作规划", "write": "正文创作", "rewrite": "文字加工", "audit": "审读分析", "confirm": "审读分析"}
+TaskKind = Literal["outline", "write", "rewrite", "audit", "confirm", "reference"]
+CATEGORIES = {"outline": "创作规划", "write": "正文创作", "rewrite": "文字加工", "audit": "审读分析", "confirm": "审读分析", "reference": "原文参考"}
 VARIABLES = {"title", "genre", "style", "instructions"}
+
+
+def validate_source_info(value):
+    """Preserve upstream metadata as JSON, with bounded storage and display inputs."""
+    try:
+        size = len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8"))
+    except (ValueError, TypeError, UnicodeError) as exc:
+        raise ValueError("来源信息必须为有效JSON") from exc
+    if size > 300000:
+        raise ValueError("来源信息超过300000字节")
+    original = value.get("original_body", "")
+    if not isinstance(original, str) or len(original) > 100000:
+        raise ValueError("来源原文必须为不超过100000字符的字符串")
+    blocks = value.get("blocks", [])
+    if not isinstance(blocks, list) or len(blocks) > 100 or any(not isinstance(block, dict) for block in blocks):
+        raise ValueError("来源blocks必须为最多100项的对象列表")
+    parameters = value.get("parameters", [])
+    if not isinstance(parameters, list) or len(parameters) > 150 or any(not isinstance(item, str) or len(item) > 150 for item in parameters):
+        raise ValueError("来源parameters必须为最多150项、单项最多150字符的字符串列表")
+    return value
 
 
 class PromptInput(BaseModel):
@@ -23,9 +44,17 @@ class PromptInput(BaseModel):
     task_kind: TaskKind
     genre_tags: list[str] = Field(default_factory=list, max_length=30)
     description: str = Field(default="", max_length=5000)
-    body: str = Field(min_length=1, max_length=20000)
+    body: str = Field(min_length=1, max_length=100000)
     novel_id: str | None = None
     enabled: bool = True
+    source_info: dict = Field(default_factory=dict)
+
+    _source_info = field_validator("source_info")(validate_source_info)
+
+    @model_validator(mode="after")
+    def validate_content(self):
+        validate_content(self.task_kind, self.body, self.source_info)
+        return self
 
 
 class PromptPatch(BaseModel):
@@ -35,9 +64,15 @@ class PromptPatch(BaseModel):
     task_kind: TaskKind | None = None
     genre_tags: list[str] | None = Field(default=None, max_length=30)
     description: str | None = Field(default=None, max_length=5000)
-    body: str | None = Field(default=None, min_length=1, max_length=20000)
+    body: str | None = Field(default=None, min_length=1, max_length=100000)
     novel_id: str | None = None
     enabled: bool | None = None
+    source_info: dict | None = None
+
+    @field_validator("source_info")
+    @classmethod
+    def bounded_source_info(cls, value):
+        return validate_source_info(value) if value is not None else None
 
 
 def validate_body(body):
@@ -51,8 +86,27 @@ def render(body, variables):
     return re.sub(r"{{\s*([A-Za-z_]+)\s*}}", lambda match: str(variables.get(match[1], "")), body)
 
 
+def validate_content(task_kind, body, source_info):
+    if task_kind != "reference":
+        if len(body) > 20000:
+            raise HTTPException(422, "可运行模板正文最多20000字符")
+        if source_info.get("compatibility") == "reference_only":
+            raise HTTPException(422, "仅供参考的来源不能用于可运行模板")
+        validate_body(body)
+
+
+def source_label(row):
+    if row.source_info:
+        if not row.builtin:
+            return "用户来源副本"
+        project_name = row.source_info.get("project")
+        project = {"MuMuAINovel": "MuMu", "Ai-Novel Lite": "Lite"}.get(project_name, "来源") if isinstance(project_name, str) else "来源"
+        return project + ("原文" if row.task_kind == "reference" else "适配")
+    return "本项目原创" if row.builtin else "用户原创"
+
+
 def prompt_data(row):
-    return {key: value for key, value in serialize(row).items() if key != "deleted"}
+    return {**{key: value for key, value in serialize(row).items() if key != "deleted"}, "source_label": source_label(row)}
 
 
 def snapshot(db, row):
@@ -86,10 +140,10 @@ def selected_snapshot(db, prompt_id, novel, kind, instructions):
     if not prompt_id:
         return None
     row = get_or_404(db, PromptTemplate, prompt_id)
-    if row.deleted or not row.enabled or row.task_kind != kind or row.novel_id not in (None, novel.id):
+    if row.deleted or not row.enabled or row.task_kind == "reference" or row.source_info.get("compatibility") == "reference_only" or row.task_kind != kind or row.novel_id not in (None, novel.id):
         raise HTTPException(422, "模板不可用、任务类型不匹配或不属于本书")
     variables = {"title": novel.title, "genre": novel.genre, "style": novel.style, "instructions": instructions}
-    return {"id": row.id, "revision": row.revision, "body": row.body, "rendered": render(row.body, variables), "variables": variables}
+    return {"id": row.id, "revision": row.revision, "body": row.body, "rendered": render(row.body, variables), "variables": variables, "source_info": row.source_info, "source_label": source_label(row)}
 
 
 @router.get("")
@@ -100,7 +154,6 @@ def list_prompts(db=Depends(database)):
 @router.post("")
 def create_prompt(body: PromptInput, db=Depends(database)):
     data = body.model_dump()
-    validate_body(body.body)
     if body.novel_id:
         get_or_404(db, Novel, body.novel_id)
     data["category"] = body.category or CATEGORIES[body.task_kind]
@@ -128,7 +181,6 @@ def import_prompts(body: PromptImport, dry_run: bool = True, db=Depends(database
     for index, raw in enumerate(body.prompts):
         try:
             entry = PromptInput.model_validate(raw)
-            validate_body(entry.body)
             if entry.novel_id:
                 get_or_404(db, Novel, entry.novel_id)
             key = (entry.novel_id, entry.name)
@@ -177,8 +229,8 @@ def patch_prompt(prompt_id: str, body: PromptPatch, db=Depends(database)):
     if row.revision != body.revision:
         raise HTTPException(409, "模板已更新，请刷新")
     data = body.model_dump(exclude_unset=True, exclude={"revision"})
-    if "body" in data and data["body"] is not None:
-        validate_body(data["body"])
+    validate_content(data.get("task_kind") or row.task_kind, data.get("body") or row.body,
+                     data.get("source_info") if data.get("source_info") is not None else row.source_info)
     if data.get("novel_id"):
         get_or_404(db, Novel, data["novel_id"])
     for key, value in data.items():
@@ -220,4 +272,7 @@ def preview(prompt_id: str, body: PreviewInput, db=Depends(database)):
     if row.novel_id and (not book or book.id != row.novel_id):
         raise HTTPException(422, "模板不属于本书")
     variables = {"title": book.title if book else "", "genre": book.genre if book else "", "style": book.style if book else "", "instructions": body.instructions}
+    if row.task_kind == "reference" or row.source_info.get("compatibility") == "reference_only":
+        return {"rendered": row.body, "variables": {}, "revision": row.revision,
+                "reference_only": True, "missing_variables": row.source_info.get("parameters", [])}
     return {"rendered": render(row.body, variables), "variables": variables, "revision": row.revision}

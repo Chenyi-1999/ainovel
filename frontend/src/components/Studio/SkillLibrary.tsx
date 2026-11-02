@@ -15,7 +15,7 @@ export default function SkillLibrary({ api, novelId, chapters, chapterId, prompt
   const [count, setCount] = useState(1);
   const { busy, error, run } = useOperation();
   useEffect(() => {
-    run(async () => setSkills(await api<Skill[]>('/skills')));
+    run(async () => setSkills((await api<Skill[]>('/skills')).filter(s => Object.prototype.hasOwnProperty.call(taskNames, s.job_kind))));
   }, []);
   useEffect(() => {
     setTarget(chapterId || chapters[0]?.id || '');
@@ -69,8 +69,9 @@ export default function SkillLibrary({ api, novelId, chapters, chapterId, prompt
           className="studio-fields"
           onSubmit={e => {
             e.preventDefault();
-            if (!novelId || (chapterRequired && !target)) return;
-            onRun(kind, { skill_id: skill.id, prompt_template_id: template || null, instructions, target_words: words, count, ...(chapterRequired ? { chapter_id: target } : {}), ...(kind === 'rewrite' ? { selection } : {}) });
+            if (!novelId || !Object.prototype.hasOwnProperty.call(taskNames, kind) || (chapterRequired && !target)) return;
+            const selectedTemplate = matchingPrompts(prompts, kind, novelId).find(p => p.id === template);
+            onRun(kind, { skill_id: skill.id, prompt_template_id: selectedTemplate?.id || null, instructions, target_words: words, count, ...(chapterRequired ? { chapter_id: target } : {}), ...(kind === 'rewrite' ? { selection } : {}) });
           }}>
           <p className="studio-callout">点击执行会调用已配置的模型并计入用量。{kind === 'confirm' && '只提取候选；请到故事记忆中审核、编辑并采纳后定稿。'}{kind === 'rewrite' && '改写结果需在正文编辑页查看后替换。'}
           </p>{!novelId && <p className="studio-error">请先从书架选择一部作品。</p>

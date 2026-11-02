@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Api, Prompt, Empty, Feedback, Header, json, taskNames, useOperation, useUnsaved } from './shared';
-import { restorePromptFields } from './studioPolicy';
-const blank = (novelId?: string): Prompt => ({ id: '', name: '', category: '创作规划', task_kind: 'outline', genre_tags: [], description: '', body: '', novel_id: novelId || null, enabled: true, builtin: false, source_label: '自定义', revision: 1 });
+import { Api, Prompt, Empty, Feedback, Header, json, useOperation, useUnsaved } from './shared';
+import { filterPrompts, promptSavePayload, promptSourceName, promptTaskNames, restorePromptFields, runnablePrompt } from './studioPolicy';
+import PromptSource, { PromptProvenance, PromptText } from './PromptSource';
+const blank = (novelId?: string): Prompt => ({ id: '', name: '', category: '创作规划', task_kind: 'outline', genre_tags: [], description: '', body: '', novel_id: novelId || null, enabled: true, builtin: false, source_label: '自定义', source_info: {}, revision: 1 });
 export default function PromptLibrary({ api, novelId, onChanged }: { api: Api; novelId?: string; onChanged: () => void }) {
   const [items, setItems] = useState<Prompt[]>([]);
   const [draft, setDraft] = useState<Prompt | null>(null);
@@ -12,13 +13,16 @@ export default function PromptLibrary({ api, novelId, onChanged }: { api: Api; n
   const [task, setTask] = useState('');
   const [tag, setTag] = useState('');
   const [scope, setScope] = useState('');
+  const [source, setSource] = useState('');
+  const [compatibility, setCompatibility] = useState('');
+  const [contentView, setContentView] = useState<'workbench' | 'source'>('workbench');
   const [preview, setPreview] = useState('');
   const [previewInstructions, setPreviewInstructions] = useState('');
   const [history, setHistory] = useState<any[] | null>(null);
   const [importData, setImportData] = useState<any>(null);
   const [report, setReport] = useState<any>(null);
   const [notice, setNotice] = useState('');
-  const { busy, error, run, setError } = useOperation();
+  const { busy, error, run } = useOperation();
   const dirty = !!draft && JSON.stringify({ ...draft, genre_tags: tags.split(/[,，]/).map(v => v.trim()).filter(Boolean) }) !== original;
   useUnsaved(dirty);
   const load = async () => {
@@ -38,17 +42,15 @@ export default function PromptLibrary({ api, novelId, onChanged }: { api: Api; n
     setOriginal(JSON.stringify(p));
     setPreview('');
     setHistory(null);
+    setNotice('');
+    setContentView(p.source_info?.project && !runnablePrompt(p) ? 'source' : 'workbench');
   };
   const update = (p: Partial<Prompt>) => draft && setDraft({ ...draft, ...p });
-  const visible = useMemo(() => items.filter(p => (!search || `${p.name} ${p.description} ${p.body}`.toLowerCase().includes(search.toLowerCase())) && (!category || p.category === category) && (!task || p.task_kind === task) && (!tag || p.genre_tags.includes(tag)) && (!scope || (scope === 'builtin' ? p.builtin : scope === 'global' ? !p.novel_id && !p.builtin : p.novel_id === novelId))), [items, search, category, task, tag, scope, novelId]);
+  const visible = useMemo(() => filterPrompts(items, { search, category, task, tag, scope, source, compatibility, novelId }), [items, search, category, task, tag, scope, source, compatibility, novelId]);
   const save = (copy = false) => run(async () => {
     if (!draft?.name.trim() || !draft.body.trim()) throw new Error('请填写名称和提示词正文。');
     const creating = copy || !draft.id || draft.builtin;
-    const payload = { ...draft, genre_tags: tags.split(/[,，]/).map(v => v.trim()).filter(Boolean), ...(creating ? { name: copy ? `${draft.name} · 副本` : draft.name, builtin: false, source_label: '自定义' } : {}) } as Partial<Prompt>;
-    if (creating) {
-      delete payload.id;
-      delete payload.revision;
-    }
+    const payload = promptSavePayload(draft, tags, copy);
     const saved = await api<Prompt>(creating ? '/prompts' : `/prompts/${draft.id}`, { method: creating ? 'POST' : 'PATCH', ...json(payload) });
     setDraft(saved);
     setTags(saved.genre_tags.join(', '));
@@ -67,7 +69,7 @@ export default function PromptLibrary({ api, novelId, onChanged }: { api: Api; n
     URL.revokeObjectURL(url);
   });
   return <section className="section-card studio">
-    <Header title="提示词库" text="按任务组织可复用的创作指令，题材标签独立于分类。内置模板可另存后调整。">
+    <Header title="提示词库" text="按用途浏览原创模板与来源原文。可执行适配版连接现有任务；原文参考保留来源资料。内置条目只读，可复制或另存。">
       <button className="button outline small" disabled={busy} onClick={exportAll}>导出</button>
       <label className="button outline small studio-file">导入 JSON<input
         type="file"
@@ -127,10 +129,22 @@ export default function PromptLibrary({ api, novelId, onChanged }: { api: Api; n
         )}
       </select>
       <select aria-label="任务筛选" value={task} onChange={e => setTask(e.target.value)}>
-        <option value="">全部任务</option>{Object.entries(taskNames).map(([k, v]) =>
+        <option value="">全部任务</option>{Object.entries(promptTaskNames).map(([k, v]) =>
           <option key={k} value={k}>{v}
           </option>
         )}
+      </select>
+      <select aria-label="来源筛选" value={source} onChange={e => setSource(e.target.value)}>
+        <option value="">全部来源（{items.length}）</option>
+        <option value="original">本项目原创（{filterPrompts(items, { source: 'original' }).length}）</option>
+        <option value="MuMuAINovel">MuMuAINovel（{filterPrompts(items, { source: 'MuMuAINovel' }).length}）</option>
+        <option value="Ai-Novel Lite">Ai-Novel Lite（{filterPrompts(items, { source: 'Ai-Novel Lite' }).length}）</option>
+        <option value="custom">用户自定义及副本（{filterPrompts(items, { source: 'custom' }).length}）</option>
+      </select>
+      <select aria-label="适配状态筛选" value={compatibility} onChange={e => setCompatibility(e.target.value)}>
+        <option value="">全部适配状态</option>
+        <option value="adapted">可用于当前任务</option>
+        <option value="reference_only">原文参考（未接入任务）</option>
       </select>
       <select aria-label="题材筛选" value={tag} onChange={e => setTag(e.target.value)}>
         <option value="">全部题材</option>{Array.from(new Set(items.flatMap(p => p.genre_tags))).map(t =>
@@ -162,6 +176,7 @@ export default function PromptLibrary({ api, novelId, onChanged }: { api: Api; n
           });
         }}>重新载入</button>
     </div>
+    <p className="studio-catalog-count" role="status">显示 {visible.length} / {items.length} 条提示词 · 全库可用于当前任务 {items.filter(runnablePrompt).length} 条 · 原文参考 {items.filter(p => !runnablePrompt(p)).length} 条。一个来源预设计为一条，内部提示词块不单独计数；来源项目筛选包含其用户副本。</p>
     <div className="studio-split">
       <div className="studio-list" aria-label="提示词列表">{visible.map(p =>
         <button
@@ -172,8 +187,9 @@ export default function PromptLibrary({ api, novelId, onChanged }: { api: Api; n
             <small>{p.enabled ? '已启用' : '已停用'}
             </small>
           </span>
-          <span>{taskNames[p.task_kind]} · {p.category}
+          <span>{promptTaskNames[p.task_kind] || p.task_kind} · {p.category}
           </span>
+          <small>{promptSourceName(p)}{p.source_info?.project && !p.builtin ? ' · 用户副本' : ''} · {runnablePrompt(p) ? '可用于当前任务' : '原文参考'}</small>
           <small>{p.builtin ? '内置' : p.novel_id ? '作品专用' : '全局'} · {p.genre_tags.join(' / ') || '不限题材'}
           </small>
         </button>
@@ -186,9 +202,16 @@ export default function PromptLibrary({ api, novelId, onChanged }: { api: Api; n
           <div className="studio-detail-title">
             <h3>{draft.id ? draft.name : '新建提示词'}
             </h3>
-            <span className="studio-badge">{draft.builtin ? '内置 · 只读' : dirty ? '未保存修改' : `版本 ${draft.revision}`}
+            <span className="studio-badge">{draft.builtin ? `内置 · 只读 · 版本 ${draft.revision}` : dirty ? '未保存修改' : `版本 ${draft.revision}`}
             </span>
           </div>
+          <PromptProvenance prompt={draft} />
+          {draft.source_info?.project && <div className="studio-subtabs" aria-label="提示词内容视图">
+            <button type="button" className={contentView === 'workbench' ? 'active' : ''} aria-pressed={contentView === 'workbench'} onClick={() => setContentView('workbench')}>{runnablePrompt(draft) ? '当前工作台适配版' : '参考资料正文'}</button>
+            <button type="button" className={contentView === 'source' ? 'active' : ''} aria-pressed={contentView === 'source'} onClick={() => setContentView('source')}>来源原文</button>
+          </div>}
+          {contentView === 'source' && draft.source_info?.project ? <PromptSource key={draft.id} prompt={draft} /> : <>
+          {!runnablePrompt(draft) && <p className="studio-callout">此条仅供原文参考，未接入生成或 Skill 任务。另存副本会保留来源及参考状态。</p>}
           <fieldset disabled={draft.builtin || busy} className="studio-fields">
             <label>名称<input value={draft.name} onChange={e => update({ name: e.target.value })} />
             </label>
@@ -197,14 +220,14 @@ export default function PromptLibrary({ api, novelId, onChanged }: { api: Api; n
                 list="prompt-categories"
                 value={draft.category}
                 onChange={e => update({ category: e.target.value })} />
-                <datalist id="prompt-categories">{['创作规划', '正文创作', '文字加工', '审读分析'].map(c =>
+                <datalist id="prompt-categories">{Array.from(new Set(['创作规划', '正文创作', '文字加工', '审读分析', ...items.map(p => p.category)])).map(c =>
                   <option key={c}>{c}
                   </option>
                 )}
                 </datalist>
               </label>
-              <label>任务<select value={draft.task_kind} onChange={e => update({ task_kind: e.target.value })}>{Object.entries(taskNames).map(([k, v]) =>
-                <option key={k} value={k}>{v}
+              <label>任务<select value={draft.task_kind} onChange={e => update({ task_kind: e.target.value })}>{Object.entries(promptTaskNames).map(([k, v]) =>
+                <option key={k} value={k} disabled={draft.source_info?.compatibility === 'reference_only' && k !== 'reference'}>{v}
                 </option>
               )}
               </select>
@@ -223,19 +246,21 @@ export default function PromptLibrary({ api, novelId, onChanged }: { api: Api; n
               value={draft.description}
               onChange={e => update({ description: e.target.value })} />
             </label>
-            <label>正文<textarea
+            {!draft.builtin && <label>正文<textarea
               className="studio-code"
               rows={12}
               value={draft.body}
               onChange={e => update({ body: e.target.value })} />
-            </label>
-            <small>可用变量：{'{{title}} / {{genre}} / {{style}} / {{instructions}}'}。仅替换这些安全变量。</small>
+            </label>}
+            <small>{runnablePrompt(draft) ? <>适配版可用变量：{'{{title}} / {{genre}} / {{style}} / {{instructions}}'}。仅替换这四个变量。</> : '参考资料的源系统变量不在当前工作台执行。'}</small>
             <label className="studio-check">
               <input
                 type="checkbox"
                 checked={draft.enabled}
-                onChange={e => update({ enabled: e.target.checked })} />启用此模板</label>
+                onChange={e => update({ enabled: e.target.checked })} />{runnablePrompt(draft) ? '启用此模板' : '在库中启用此参考条目（不会接入任务）'}</label>
           </fieldset>
+          {draft.builtin && <PromptText key={draft.id} title={runnablePrompt(draft) ? '当前工作台适配版正文' : '参考资料正文'} body={draft.body} />}
+          </>}
           <div className="studio-actions">{!draft.builtin && <button className="button primary small" disabled={busy || !dirty} onClick={() => save()}>保存</button>
           }
             <button className="button outline small" disabled={busy} onClick={() => save(true)}>另存为自定义</button>{draft.id && <>
@@ -258,7 +283,7 @@ export default function PromptLibrary({ api, novelId, onChanged }: { api: Api; n
                     });
                   }}>删除</button>
               }</>}
-          </div>{draft.id && <div className="studio-preview">
+          </div>{draft.id && runnablePrompt(draft) && contentView === 'workbench' && <div className="studio-preview">
             <label>预览附加指令<input
               value={previewInstructions}
               onChange={e => setPreviewInstructions(e.target.value)}
@@ -281,6 +306,7 @@ export default function PromptLibrary({ api, novelId, onChanged }: { api: Api; n
                 </summary>
                 <pre>{h.snapshot?.body || h.body || '历史正文不可用'}
                 </pre>
+                {h.snapshot?.source_info?.project && <details><summary>查看此修订的来源记录</summary><PromptProvenance prompt={{ ...draft, ...h.snapshot }} /><PromptSource prompt={{ ...draft, ...h.snapshot }} /></details>}
                 {!draft.builtin && h.snapshot?.body && <button
                   className="button outline small"
                   disabled={busy || dirty}

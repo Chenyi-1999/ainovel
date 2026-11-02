@@ -7,7 +7,7 @@ from sqlalchemy import inspect, text
 
 from .db import Base
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def migrate(engine):
@@ -23,6 +23,7 @@ def migrate(engine):
             raise RuntimeError("Database schema is newer than this application")
         existing = inspect(connection).get_table_names()
         additions = {
+            "prompt_templates": {"source_info": "JSON NOT NULL DEFAULT '{}'"},
             "novels": {"context_revision": "INTEGER NOT NULL DEFAULT 1"},
             "memories": {
                 "source_revision": "INTEGER",
