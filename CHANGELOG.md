@@ -105,3 +105,11 @@
 - 证据：忽略的artifacts/studio-smoke/verify-result.json、persistence-checkpoint.json、handwritten-demo.txt、prompts-desktop.jpg、memory-review.jpg、skills-mobile.jpg、relations-desktop.jpg、manual-copy.jpg。源码和数据库D盘备份索引、管理记录已追加。私有值不入日志或Git。
 - 边界：图谱/伏笔是人工维护及证据引用，非自动全文关系抽取；自动上下文使用Memory和既有小说资料，不额外注入全部图谱/计划；无向量模型、通用任意Skill执行器、完整POV推理或百万字质量保证。自动剪贴板在内置浏览器未独立核实，手动入口可用。
 - Git：本条写入时本轮尚未提交/推送；运行镜像已部署，接下来提交并同步188开发源码工作树；最终Git同步另记。build暂存位于D盘和188独立构建目录，未在C盘生成大源码副本。
+
+## AINOVEL-INTEGRATE-20261102-03（关联 INTEGRATE-02）
+
+- 时间：2026-11-02T18:39:36+08:00 Asia/Shanghai；代理/root；文件CHANGELOG.md，仅补记交付状态，不再修改业务或模型配置。
+- Git：功能提交563384fa675f6c1435e059990742a8b6f698c864已推送Gitee main（18cf4b6→563384f）；Git bundle校验通过，188:/opt/ainovel由a0330fb快进到同提交，工作树干净，没有复制SSH私钥。本条作为文档提交随后同步。
+- 最终检查：主项目5容器Running且无OOM，API/DB/Redis各自health均healthy，公开健康200；Web/Worker无独立healthcheck，已由实际UI/任务验证。体验容器与网络均0，18020–18023连接均拒绝，7个试用卷及源码/镜像保留，自己的Buildx构建器已停止。
+- 复制验收补充：最终手动复制入口已部署，浏览器文本框含完整当前正文、标题选项受尊重且selection全选为true；未触发保存或章节revision变化。自动剪贴板读回边界保持02所述。最终API/Worker/Web重建后，13项业务检查中的持久化核对通过；真实用量仍为3调用/1708输入/1268输出，没有额外付费复测。
+- 证据：artifacts/studio-smoke/runtime-audit.json及verify-result.json；旧数据与私有配置保留。余项仅为明确未承诺的自动全文图谱、向量检索、通用Skill和完整POV能力，非本轮基础功能遗漏。未操作81，152只管理中转。
