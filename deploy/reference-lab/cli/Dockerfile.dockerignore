@@ -1,0 +1,7 @@
+.git
+.github
+.ainovel
+config
+workspace
+output*
+*.log

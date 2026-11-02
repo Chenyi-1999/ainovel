@@ -1,0 +1,7 @@
+.git
+.github
+frontend/node_modules
+frontend/dist
+storys
+*.exe
+dev.log

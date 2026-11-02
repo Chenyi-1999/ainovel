@@ -1,0 +1,26 @@
+{
+  "mumu": {
+    "repository": "https://github.com/xiamuceer-j/MuMuAINovel",
+    "branch": "main",
+    "commit": "743e5abec18beb8d73426527e6579538053bc6fd",
+    "license": "GPL-3.0"
+  },
+  "lite": {
+    "repository": "https://github.com/inliver233/Ai-Novel",
+    "branch": "lite",
+    "commit": "d3bce7437861402083edd77af3cc50b088026b7d",
+    "license": null
+  },
+  "story": {
+    "repository": "https://github.com/Nigh/show-me-the-story",
+    "branch": "main",
+    "commit": "f790187373f23dbaaffa0838197e972a394960d3",
+    "license": "MIT"
+  },
+  "cli": {
+    "repository": "https://github.com/voocel/ainovel-cli",
+    "branch": "main",
+    "commit": "1c4fd8b3f9f2ade663b238cb2bf1ea7ac7d43bcf",
+    "license": "Apache-2.0"
+  }
+}

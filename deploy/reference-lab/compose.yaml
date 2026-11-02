@@ -1,0 +1,101 @@
+name: ainovel-reference-lab
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    user: "101:101"
+    ports:
+      - "18020:8020"
+      - "18021:8021"
+      - "18022:8022"
+      - "18023:8023"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./gateway/cli.html:/usr/share/nginx/html/cli.html:ro
+      - ./gateway/auth-locations.conf:/etc/nginx/lab-auth.conf:ro
+    tmpfs:
+      - /tmp:size=8m,uid=101,gid=101
+      - /var/cache/nginx:size=8m,uid=101,gid=101
+    networks: [edge, auth_net, mumu_net, lite_net, story_net, cli_net]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 32m
+    memswap_limit: 32m
+    cpus: 0.25
+    pids_limit: 32
+    restart: unless-stopped
+    depends_on: [auth]
+    logging: &logs
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+  auth:
+    image: python:3.12-alpine
+    init: true
+    user: "10001:10001"
+    command: [python, /app/auth.py]
+    volumes:
+      - ./gateway/auth.py:/app/auth.py:ro
+      - ./private/auth.json:/run/auth.json:ro
+    networks: [auth_net]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 48m
+    memswap_limit: 48m
+    cpus: 0.5
+    pids_limit: 32
+    restart: unless-stopped
+    logging: *logs
+  story:
+    image: ainovel-reference-story:f790187
+    build:
+      context: ../../.reference-sources/story
+      dockerfile: ../../deploy/reference-lab/story/Dockerfile
+    init: true
+    volumes: [story_data:/data]
+    networks: [story_net]
+    mem_limit: 96m
+    memswap_limit: 96m
+    cpus: 0.5
+    pids_limit: 64
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:48090/"]
+      interval: 30s
+      timeout: 3s
+      retries: 4
+    logging: *logs
+  cli:
+    image: ainovel-reference-cli:1c4fd8b
+    build:
+      context: ../../.reference-sources/cli
+      dockerfile: ../../deploy/reference-lab/cli/Dockerfile
+    init: true
+    volumes:
+      - cli_workspace:/workspace
+      - cli_config:/home/writer/.ainovel
+    networks: [cli_net]
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:7681/terminal/"]
+      interval: 30s
+      timeout: 3s
+      retries: 4
+    logging: *logs
+volumes:
+  story_data:
+  cli_workspace:
+  cli_config:
+networks:
+  edge: {}
+  auth_net: {internal: true}
+  story_net: {internal: true}
+  cli_net: {internal: true}

@@ -1,0 +1,139 @@
+# Overlay with deploy/reference-lab/compose.yaml first; paths resolve from that file.
+services:
+  mumu:
+    image: ainovel-reference-mumu:743e5ab-ui
+    build:
+      context: ../../.reference-sources/mumu
+      dockerfile: ../../deploy/reference-lab/mumu/Dockerfile
+      additional_contexts:
+        lab_mumu: ./mumu
+    init: true
+    restart: unless-stopped
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpus: 0.75
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      mumu-db:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      MUMU_UI_ONLY: "true"
+      ONNX_EMBEDDING_OFFLINE: "true"
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8000"
+      DEBUG: "false"
+      LOG_TO_FILE: "false"
+      DATABASE_URL: postgresql+asyncpg://mumu:${MUMU_DB_PASSWORD:?MUMU_DB_PASSWORD is required}@mumu-db:5432/mumu
+      DB_HOST: mumu-db
+      DB_PORT: "5432"
+      POSTGRES_DB: mumu
+      POSTGRES_USER: mumu
+      POSTGRES_PASSWORD: ${MUMU_DB_PASSWORD:?MUMU_DB_PASSWORD is required}
+      DATABASE_POOL_SIZE: "2"
+      DATABASE_MAX_OVERFLOW: "2"
+      DATABASE_POOL_TIMEOUT: "15"
+      LOCAL_AUTH_ENABLED: "true"
+      LOCAL_AUTH_USERNAME: admin
+      LOCAL_AUTH_PASSWORD: ${MUMU_ADMIN_PASSWORD:?MUMU_ADMIN_PASSWORD is required}
+      LOCAL_AUTH_DISPLAY_NAME: MuMu UI Evaluation
+      SESSION_SECRET_KEY: ${MUMU_SESSION_SECRET:?MUMU_SESSION_SECRET is required}
+      SESSION_COOKIE_SECURE: "false"
+      FRONTEND_URL: ${MUMU_PUBLIC_URL:-http://188.68.41.4:18020}
+      CORS_ORIGINS: '["http://188.68.41.4:18020"]'
+      EMAIL_AUTH_ENABLED: "false"
+      EMAIL_REGISTER_ENABLED: "false"
+      LINUXDO_CLIENT_ID: ""
+      LINUXDO_CLIENT_SECRET: ""
+      LINUXDO_REDIRECT_URI: ""
+      SMTP_HOST: ""
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      OPENAI_API_KEY: ""
+      GEMINI_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      XIAOMI_MIMO_API_KEY: ""
+      OPENAI_BASE_URL: ""
+      GEMINI_BASE_URL: ""
+      ANTHROPIC_BASE_URL: ""
+      XIAOMI_MIMO_BASE_URL: ""
+      DEFAULT_MODEL: ""
+      ALLOW_PRIVATE_AI_ENDPOINTS: "false"
+      ALLOWED_AI_HOSTS: ""
+      WORKSHOP_MODE: client
+      WORKSHOP_CLOUD_URL: http://127.0.0.1:9
+      WORKSHOP_API_TIMEOUT: "2"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      NO_PROXY: localhost,127.0.0.1,mumu-db
+    expose:
+      - "8000"
+    volumes:
+      - mumu_data:/app/data
+      - mumu_storage:/app/storage
+    networks:
+      - mumu_net
+      - mumu_db_net
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+  mumu-db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TZ: Asia/Shanghai
+      POSTGRES_DB: mumu
+      POSTGRES_USER: mumu
+      POSTGRES_PASSWORD: ${MUMU_DB_PASSWORD:?MUMU_DB_PASSWORD is required}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+    command:
+      - postgres
+      - -c
+      - max_connections=15
+      - -c
+      - shared_buffers=16MB
+      - -c
+      - effective_cache_size=64MB
+      - -c
+      - work_mem=1MB
+      - -c
+      - maintenance_work_mem=16MB
+      - -c
+      - wal_buffers=1MB
+    volumes:
+      - mumu_postgres:/var/lib/postgresql
+      - ../../.reference-sources/mumu/backend/scripts/init_postgres.sql:/docker-entrypoint-initdb.d/mumu.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U mumu -d mumu"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    networks:
+      - mumu_db_net
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+volumes:
+  mumu_data:
+  mumu_storage:
+  mumu_postgres:
+networks:
+  mumu_net:
+    internal: true
+  mumu_db_net:
+    internal: true
